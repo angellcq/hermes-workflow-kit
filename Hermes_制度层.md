@@ -124,6 +124,13 @@ claude -p "按 DD 文档实现用户登录 API，包含错误处理" \
 - `--continue` / `--resume <id>` 续接会话
 - 长任务用 `terminal(background=true, notify=true)` 起，结束后核对退出码
 
+**任务传递姿势（防空任务，关键）**：
+
+任务内容必须落盘到 worktree 内的 `TASK.md`，启动指令只写"读 TASK.md 并执行"（≤4KB）。以下三种写法会把任务吞掉、导致 Claude Code 收到空任务零产出，**禁止**：
+- `$(cat 全文件)` —— 把整份需求 cat 进命令行，shell 解析时内容丢失
+- `--system` flag —— Claude Code 不支持，静默忽略
+- `>4KB` 内联长指令 —— 内联 prompt 超长被截断
+
 **Interactive 模式（多轮迭代）**：
 
 ```
@@ -141,9 +148,10 @@ claude -p "按 DD 文档实现用户登录 API，包含错误处理" \
 4. 完成后独立验收：重新构建 + 逐文件核对 diff，不以 Claude 自述为准
 5. 派发前可先加载框架技能 `claude-code` / `kanban-claude-lane` 获取最新操作细节
 6. **委派失败升级机制**（关键）：Claude Code 委派后必须验证产出——结束后立即检查 `git status --short` 和 `git diff --stat HEAD`。如果零变更，视为委派失败，按以下规则处理：
-   - 第一次失败：尝试更换模型重试（deepseek-v4-flash 最可靠，避开 glm-5.3-flash/qwen3.8-max）；确保 prompt ≤4KB 或用 Pattern B（短指令让 Claude 自己读文件）；prompt 必须放在 worktree 内部而非外部
-   - 第二次失败于同一项目+同类任务：**立即停止重试**，切换为 Hermes 手动 patch/insert/delete，不浪费 token 循环
+   - 第一次失败：**立即 STOP**。同一项目 Claude Code 零产出就是结构性不兼容（路径解析/大型 C#/worktree 组合等），不是换模型能解决的问题。直接切换为 Hermes 手动 patch/insert/delete。
    - 在任务卡片摘要中标注"委派失败原因→已转手动"，保持审计链完整
+7. **走工作流时 Hermes 不亲自改代码**：正常流程只负责拆解需求→写任务卡→派发 Claude Code/Codex 改代码→独立验收（review diff + 构建）；代码修改只能由派发的编码代理完成（委派失败按第 6 条兜底，转手动前告知用户）
+8. **派发时不管用户用什么模型**：不查、不提醒、不干预 cc-switch 模型配置，直接派发
 
 ## 七、Agent 十条军规
 
