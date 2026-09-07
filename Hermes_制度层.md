@@ -140,6 +140,10 @@ claude -p "按 DD 文档实现用户登录 API，包含错误处理" \
 3. 项目红线（如 MDF 扩展规范、数据访问白名单）随每次委派指令附带
 4. 完成后独立验收：重新构建 + 逐文件核对 diff，不以 Claude 自述为准
 5. 派发前可先加载框架技能 `claude-code` / `kanban-claude-lane` 获取最新操作细节
+6. **委派失败升级机制**（关键）：Claude Code 委派后必须验证产出——结束后立即检查 `git status --short` 和 `git diff --stat HEAD`。如果零变更，视为委派失败，按以下规则处理：
+   - 第一次失败：尝试更换模型重试（deepseek-v4-flash 最可靠，避开 glm-5.3-flash/qwen3.8-max）；确保 prompt ≤4KB 或用 Pattern B（短指令让 Claude 自己读文件）；prompt 必须放在 worktree 内部而非外部
+   - 第二次失败于同一项目+同类任务：**立即停止重试**，切换为 Hermes 手动 patch/insert/delete，不浪费 token 循环
+   - 在任务卡片摘要中标注"委派失败原因→已转手动"，保持审计链完整
 
 ## 七、Agent 十条军规
 
