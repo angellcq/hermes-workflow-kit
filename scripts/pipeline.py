@@ -107,6 +107,7 @@ class PipelineContext:
     dry_run: bool
     only_analyze: bool
     from_stage: str
+    path_override: str = ""  # --path 传入：覆盖 PROJECTS 配置的 path/workdir
     worktree_path: Path | None = None
     reports: dict[str, StageReport] = field(default_factory=dict)
     report_dir: Path | None = None
@@ -496,8 +497,11 @@ def orchestrate(ctx: PipelineContext) -> int:
         log(f"   可用项目：{', '.join(PROJECTS.keys())}")
         return 1
 
-    cfg = PROJECTS[ctx.project]
+    cfg = dict(PROJECTS[ctx.project])  # 拷贝，避免 setdefault 污染全局配置
     cfg.setdefault("lang", ctx.lang)
+    if ctx.path_override:
+        cfg["path"] = ctx.path_override
+        cfg["workdir"] = ctx.path_override
 
     timestamp = datetime.now().strftime("%Y%m%d-%H%M")
     ctx.report_dir = REPORT_BASE / ctx.project / timestamp
@@ -633,6 +637,7 @@ def main() -> int:
         """,
     )
     parser.add_argument("--project", required=True, help="PROJECTS 中配置的项目名")
+    parser.add_argument("--path", help="覆盖项目路径（免改 PROJECTS 配置的临时指向）")
     parser.add_argument("--task", required=True, help="自然语言任务描述")
     parser.add_argument("--lang", default="python", help="目标语言（默认 python）")
     parser.add_argument("--skip-e2e", action="store_true", help="跳过 04 页面联调阶段")
@@ -655,6 +660,7 @@ def main() -> int:
         dry_run=args.dry_run,
         only_analyze=args.only_analyze,
         from_stage=args.from_stage,
+        path_override=args.path or "",
     )
     if args.report_dir:
         ctx.report_dir = Path(args.report_dir)

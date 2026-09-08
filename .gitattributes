@@ -1,0 +1,9 @@
+# 换行符规范：LF 为主，防止 CRLF 破坏 shell/python 脚本
+*.sh    text eol=lf
+*.py    text eol=lf
+*.md    text eol=lf
+*.yaml  text eol=lf
+*.yml   text eol=lf
+*.json  text eol=lf
+*.gitattributes text eol=lf
+*.gitignore     text eol=lf

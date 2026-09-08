@@ -31,6 +31,35 @@
 
 ---
 
+## v4.3（2026-09-09）— 工程健壮性加固
+
+> 对应评估报告 §2.7 四项短板（零测试/依赖脆弱/中文路径/无 CI）逐一处理。
+
+### 改动
+
+| # | 改动 | 落点 |
+|---|------|------|
+| 1 | **修复实质 bug**：`update_active` 无 jq 时原仅 warn 后什么都不做（任务追踪数据静默丢失）；现改为 python 兜底，且代码走 `-c`、JSON 走 stdin/stdout、文件操作由 bash 完成——绕开 Windows Python 收到 MSYS 路径写到错误位置的坑 | `scripts/agent-bridge.sh` |
+| 2 | `load_roles` 兼容 `description: \|`（YAML 块格式）——已部署的 `~/.claude/agents/*.md` 存在此格式，原实现会提取出 `\|` | `scripts/agent-bridge.sh` |
+| 3 | agent-bridge.sh 增加入口守卫（被 source 时不触发 main），支持测试内嵌调用 | `scripts/agent-bridge.sh` |
+| 4 | 新增引用完整性检查器：扫描全库相对引用核对目标存在 + 检测已知失效模式（模板 11 等），负向测试验证可抓断链 | `scripts/check-references.py`（新增） |
+| 5 | 新增最小测试集 6 段：shell 语法 / py 编译 / 角色加载（16 个）/ pipeline dry-run / 引用完整性 / update_active 双路径单测 | `tests/run_tests.sh`（新增） |
+| 6 | pipeline.py 新增 `--path` 参数（免改 PROJECTS 配置临时指向项目），修复 orchestrate 直接污染全局 PROJECTS 的小问题 | `scripts/pipeline.py` |
+| 7 | `.gitattributes` 强制 LF（.sh/.py/.md/.yaml/.json），消除 CRLF 跨平台脚本报错 | `.gitattributes`（新增） |
+| 8 | 临时产物目录 `.test-tmp/` 入 .gitignore | `.gitignore` |
+
+### 验证
+
+- 全部 6 段测试逐段绿灯（含块格式解析、去重+状态迁移、断链负向检测）
+- 脚本语法/编译全过；`update_active` python 兜底在 Windows + Git Bash 环境实测写读正常
+
+### 未做（明示）
+
+- **中文目录英文化**（评估报告 P3）：涉及全库引用与用户习惯，收益/风险比低，维持现状
+- **CI 接入**：当前为本地测试集（`bash tests/run_tests.sh`），接入 GitHub Actions 留待有远端仓库需求时
+
+---
+
 ## v4.2（2026-09-09）— 角色清单自动同步 + 导览重建
 
 ### 改动

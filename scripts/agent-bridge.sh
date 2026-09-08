@@ -56,6 +56,10 @@ load_roles() {
     name=$(sed -n 's/^name:[[:space:]]*//p' "$f" | head -1)
     [[ -z "$name" ]] && name=$(basename "$f" .md)
     desc=$(sed -n 's/^description:[[:space:]]*//p' "$f" | head -1)
+    # 兼容 description: |（YAML 块格式）：取块内首个非空行
+    if [[ -z "$desc" || "$desc" == "|" || "$desc" == ">" ]]; then
+      desc=$(sed -n '/^description:[[:space:]]*[|>]/,/^[[:alpha:]_]*:/p' "$f" | sed -n '2p' | sed 's/^[[:space:]]*//')
+    fi
     desc=${desc#\"}; desc=${desc%\"}
     ROLES+=("$name")
     ROLE_DESC+=("${desc:0:60}")
@@ -282,7 +286,9 @@ update_active() {
     active='{"tasks":[]}'
   fi
 
-  # 简化：用 jq 操作（若可用），否则用 sed
+  # jq 优先；无 jq 用 python 兜底（两者皆无则报错退出，绝不静默丢数据）。
+  # python 路径：代码走 -c，JSON 走 stdin/stdout，文件读写由 bash 重定向完成
+  # （避免 Windows Python 收到 MSYS 路径 /tmp/... 时写到错误位置）
   if command -v jq &>/dev/null; then
     local tmp
     tmp=$(mktemp)
@@ -291,7 +297,31 @@ update_active() {
       > "$tmp"
     mv "$tmp" "$ACTIVE_FILE"
   else
-    warn "未安装 jq，active.json 更新降级处理"
+    local py_bin=""
+    command -v python3 &>/dev/null && py_bin="python3"
+    [[ -z "$py_bin" ]] && command -v python &>/dev/null && py_bin="python"
+    if [[ -n "$py_bin" ]]; then
+      local tmp
+      tmp=$(mktemp)
+      printf '%s' "$active" | "$py_bin" -c '
+import json, sys, datetime
+task_id, role, pid, status = sys.argv[1:5]
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    data = {"tasks": []}
+data.setdefault("tasks", [])
+data["tasks"] = [t for t in data["tasks"] if t.get("task_id") != task_id]
+data["tasks"].append({
+    "task_id": task_id, "role": role, "pid": int(pid), "status": status,
+    "updated_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S%z"),
+})
+json.dump(data, sys.stdout, ensure_ascii=False, indent=2)
+' "$task_id" "$role" "$pid" "$status" > "$tmp" && mv "$tmp" "$ACTIVE_FILE"
+    else
+      err "active.json 更新失败：需要 jq 或 python（两者都未安装）"
+      return 1
+    fi
   fi
 }
 
@@ -487,4 +517,7 @@ main() {
   esac
 }
 
-main "$@"
+# 仅直接执行时进入主流程；被 source（测试）时不触发
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
+fi

@@ -38,6 +38,9 @@ bash ~/.hermes/scripts/agent-bridge.sh roles   # 列出角色（动态扫描）
 
 # 3. 使用（三种模式：轻量 / 严谨 / 自动）
 #    详见 USAGE.md
+
+# 4. 运行测试集（脚本语法 / 角色加载 / pipeline 冒烟 / 引用完整性）
+bash tests/run_tests.sh
 ```
 
 ## 目录说明
@@ -49,7 +52,8 @@ bash ~/.hermes/scripts/agent-bridge.sh roles   # 列出角色（动态扫描）
 | `Hermes模板库/` | 01-10 文档模板 + 编码规范_跨语言.md | 编码规范唯一源 |
 | `通用角色库/` + `通用角色库说明.md` | 16 角色定义与清单 | **角色清单唯一源**（agent-bridge.sh 动态扫描自动同步） |
 | `skills/` | project-workflow / agent-bridge / autonomous-delivery / cross-language 等 | 技能入口 |
-| `scripts/` | agent-bridge.sh / pipeline.py / sync-roles-to-profiles.sh 等 | 可执行工具 |
+| `scripts/` | agent-bridge.sh / pipeline.py / check-references.py 等 | 可执行工具 |
+| `tests/` | 最小测试集（run_tests.sh） | 回归防线 |
 | `DEPLOY.md` | 部署 SOP | — |
 | `USAGE.md` | 三种使用模式 | — |
 | `CHANGELOG.md` | 版本变更账本 | 版本记录唯一源 |
