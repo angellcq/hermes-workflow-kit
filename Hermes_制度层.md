@@ -20,7 +20,7 @@
 | 拆解/派发任务 | `Hermes模板库/04_任务卡模板.md` |
 | 跨 Agent 移交 | `Hermes模板库/09_移交文档模板.md` |
 | 版本修改追溯 | `Hermes模板库/10_版本记录模板.md` |
-| 跨语言适配查询 | `Hermes模板库/11_跨语言适配清单.md` |
+| 跨语言适配查询 | `Hermes模板库/编码规范_跨语言.md` §十九 |
 | 主持协商会议 | `Hermes模板库/05_会议纪要模板.md` |
 | 写进度报告 | `Hermes模板库/06_进度报告模板.md` |
 | 验证交付 | `Hermes模板库/07_交付验证报告模板.md` |
@@ -226,7 +226,7 @@ python ~/.hermes/scripts/pipeline.py \
 
 任何 Tier 2 任务开工前，加载 `skills/cross-language/SKILL.md` 确定目标语言类型，然后：
 
-1. 读取 `Hermes模板库/11_跨语言适配清单.md` 获取该语言类型的默认规范
+1. 读取 `Hermes模板库/编码规范_跨语言.md` 获取该语言类型的默认规范
 2. 把语言规范附加到任务卡的"约束"章节
 3. 派发编码代理时附带语言规范片段
 
@@ -241,25 +241,36 @@ python ~/.hermes/scripts/pipeline.py \
 
 ## 八、通用角色库（16 角色，跨项目通用）
 
-> 详细说明见 `通用角色库说明.md`。本节给出调用约定。
+> **唯一清单**见 `通用角色库说明.md §二`。本节只约定调用方式。
 
-### 8.1 角色分类
+### 8.1 调用方式
 
-| 类别 | 角色 | 默认模型 |
-|------|------|---------|
-| 全栈 | `backend-developer` / `frontend-developer` / `fullstack-developer` / `mobile-developer` | sonnet |
-| 专业 | `dba` / `devops` / `test-engineer` / `security-reviewer` | sonnet |
-| 审查 | `code-reviewer` / `architect` / `planner` | sonnet / opus |
-| 管理 | `project-manager` / `build-error-resolver` / `docs-writer` / `tdd-guide` | haiku / sonnet |
+```bash
+# 单任务 Print
+bash ~/.hermes/scripts/agent-bridge.sh claude <role> "<任务>"
 
-### 8.2 跨语言适配约定
+# 后台执行
+bash ~/.hermes/scripts/agent-bridge.sh claude-bg <role> "<任务>" --task-id t-001
 
-每个角色启动时，**自动按目标语言加载对应规范子集**：
-- `backend-developer` → 读模板 11 + cross-language → 选择对应后端语言规范
-- `frontend-developer` → 同上，针对前端框架
-- `dba` → 按数据库类型（MySQL/PG/DM/Oracle/Mongo）加载 SQL 规范
+# 批量并行
+bash ~/.hermes/scripts/agent-bridge.sh parallel --tasks tasks.yaml
+```
 
-### 8.3 同步与部署
+### 8.2 跨语言加载约定
+
+每个角色启动时，**自动按目标语言加载对应规范子集**（详见 `编码规范_跨语言.md`）：
+- `backend-developer` / `frontend-developer` / `mobile-developer` → 加载对应语言 / 框架规范
+- `dba` → 按数据库类型（MySQL / PG / DM / Oracle / Mongo）加载 SQL 规范
+
+### 8.3 模型选择约定
+
+| 任务类型 | 模型 |
+|---------|------|
+| 日常编码 / 审查 | sonnet |
+| 架构决策 / ADR / 复杂推理 | opus（`architect` / `planner`） |
+| 高频低成本（PM 类任务） | haiku（`project-manager`） |
+
+### 8.4 部署同步
 
 ```bash
 # 一键同步 16 角色到 Hermes profiles

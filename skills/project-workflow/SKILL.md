@@ -9,6 +9,8 @@ platforms: [windows, linux, macos]
 
 项目结构化交付工作流入口 SOP。触发词：「走全流程」「启动项目工作流」「按流程交付」。
 
+> 编码委派与 Agent 军规详见 `AGENTS.md §六`、`§九`；项目专属红线以项目根 `AGENTS.md`/`.hermes.md` 为准，本文件不重复。
+
 ## 七阶段状态机
 
 ```
@@ -34,7 +36,7 @@ S0 需求受理 → S1 需求澄清 → S2 PRD编写 → S3 HLD/DD设计
 - 准出：歧义清单为空，或已形成决议
 
 ### S2 PRD 编写
-- 先读 `.hermes/Hermes模板库/01_PRD需求文档模板.md` 全文
+- 先读 `Hermes模板库/01_PRD需求文档模板.md` 全文
 - 建立追踪矩阵（US 编号 ↔ 设计 ↔ 任务卡 ↔ 验证项）
 - 产出：`doc/PRD_项目名_功能名_v版本.md`
 
@@ -57,30 +59,11 @@ S0 需求受理 → S1 需求澄清 → S2 PRD编写 → S3 HLD/DD设计
 ### S6 最终验证
 - 需求覆盖：追踪矩阵每条需求 → ≥1 张 DONE 卡 → ≥1 通过验证项
 - 交付物完整：文档齐套 / 版本一致 / 变更闭合 / 异常清零
-- 编码交付：`git diff --stat` 确认变更 + `dotnet build` / `mvn compile` 编译通过
+- 编码交付：`git diff --stat` 确认变更 + 项目编译命令通过
 
 ### S7 归档交付
 - `hermes kanban archive` 归档全部卡片
 - 交付物清单齐套
-
-## 编码委派规范（Claude Code）
-
-**核心原则：执行管道而非阅读理解引擎。**
-
-1. 先建 worktree，prompt 写入 worktree 内 TASK.md
-2. 启动指令 ≤4KB（读 TASK.md 并执行），**禁止**：`$(cat 全文件)` / `--system` / `>4KB` 内联
-3. 结束后验 `git status --short` + `git diff --stat HEAD`
-4. 零产出 → 立即 STOP → 转手动 patch（不是换模型能解决）
-5. 走工作流时 Hermes 不亲自改码：只拆需求→写卡→派发→独立验收
-6. 派发时不管用户用什么模型，不干预 cc-switch
-
-## 红线（冲突时技术红线优先）
-
-- Controller 禁业务逻辑；URL 全小写
-- 数据访问白名单：IBillQueryRepository / IBillRepository / IYmsJdbcApi
-- 实体类 AI 禁改
-- 禁 MyBatis / BaseDAO / DataSource / JPA
-- HTTP 仅 YmsHttpClientUtil，URL 走配置中心禁硬编码
 
 ## 三技能分工（本技能是入口）
 

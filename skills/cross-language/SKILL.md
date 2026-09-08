@@ -267,13 +267,9 @@ mvn install
 cp scripts/cross-language.sh ~/.hermes/scripts/
 chmod +x ~/.hermes/scripts/cross-language.sh
 
-# 配套模板（已部署到 ~/.hermes/Hermes模板库/11_跨语言适配清单.md）
+# 配套模板（已部署到 ~/.hermes/Hermes模板库/编码规范_跨语言.md）
 ```
 
 ---
 
-## 版本记录
-
-| 版本 | 日期 | 修改人 | 修改说明 |
-|------|------|--------|---------|
-| v1.0 | 2026-09-08 | Hermes | 初稿（融合版） |
+> 版本信息见仓库根 `CHANGELOG.md`（不再每个文件单独记录）。

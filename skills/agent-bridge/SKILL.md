@@ -178,48 +178,7 @@ bash agent-bridge.sh codex <role> "<任务>"
 
 ---
 
-## 任务传递姿势（防空任务，关键）
-
-任务内容**必须落盘到 worktree 内的 `TASK.md`**，启动指令只写"读 TASK.md 并执行"（≤4KB）。
-
-以下三种写法会把任务吞掉，导致 Claude Code 收到空任务零产出，**禁止**：
-
-- ❌ `$(cat 全文件)` —— 把整份需求 cat 进命令行，shell 解析时内容丢失
-- ❌ `--system` flag —— Claude Code 不支持，静默忽略
-- ❌ `>4KB` 内联长指令 —— 内联 prompt 超长被截断
-
-**正确写法**（agent-bridge 自动处理）：
-
-```bash
-# agent-bridge 内部会：
-# 1. 把任务内容写入 worktree/TASK.md
-# 2. 启动命令只写 "读 TASK.md 并执行"
-# 3. 角色提示词通过 ~/.claude/agents/<role>.md 加载（不进入命令行）
-```
-
----
-
-## 委派失败升级机制（关键）
-
-任何 `claude/codex` 调用后，必须验证产出：
-
-```bash
-# 委派后立即检查
-cd <workdir>
-git status --short       # 必须有变更
-git diff --stat HEAD     # 必须有内容
-```
-
-**如果零变更**（零产出）：
-
-1. **第一次失败**：立即 STOP
-   - 同一项目 Claude Code 零产出往往是结构性不兼容（路径解析/大型代码库/worktree 组合等）
-   - **不是换模型能解决的问题**（不是换 codex 就能修）
-   - 直接切换为 Hermes 手动 patch/insert/delete
-
-2. **在任务卡片摘要中标注**："委派失败原因→已转手动"，保持审计链完整
-
-3. **失败模式记录**：`~/.workbuddy/agent-bridge/failures.log`，便于事后分析
+> **任务传递姿势与委派失败升级机制**：详见 `AGENTS.md §六.5` 与 `AGENTS.md §六.7`，本 SKILL 不重复。
 
 ---
 
@@ -266,34 +225,14 @@ git diff --stat HEAD     # 必须有内容
 
 ---
 
-## 红线（融合版）
-
-- 不亲自改代码：走工作流时 Hermes 只负责拆需求→写卡→委派→验收
-- 不吞错：所有委派失败必须有明确报告，不静默继续
-- 不跳验证：委派后必须检查 diff 非空 + 编译通过
-- 不重复失败：零产出不要尝试换模型，STOP 转手动
+> **红线**：详见 `AGENTS.md §九` Agent 十条军规——不亲自改代码 / 不吞错 / 不跳验证 / 不重复失败。本 SKILL 不重复。
 
 ---
 
 ## 部署
 
-```bash
-# 部署脚本
-cp scripts/agent-bridge.sh ~/.hermes/scripts/
-chmod +x ~/.hermes/scripts/agent-bridge.sh
-
-# 部署角色库
-bash ~/.hermes/scripts/sync-roles-to-profiles.sh
-
-# 验证
-bash ~/.hermes/scripts/agent-bridge.sh roles
-# 应列出 16 个角色
-```
+详见 `DEPLOY.md §5`。
 
 ---
 
-## 版本记录
-
-| 版本 | 日期 | 修改人 | 修改说明 |
-|------|------|--------|---------|
-| v1.0 | 2026-09-08 | Hermes | 初稿（融合版） |
+> 版本信息见仓库根 `CHANGELOG.md`（不再每个文件单独记录）。

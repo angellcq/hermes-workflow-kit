@@ -344,30 +344,14 @@ python pipeline.py --project my-app --task "..." --dry-run
 
 ---
 
-## 红线（融合版）
-
-- 不假设项目栈：未在 PROJECTS 配置中的项目，pipeline 拒绝执行
-- 不跳过验证宣告完成：每个阶段必须有产物输出
-- 不吞错：所有失败必须有明确 JSON 报告
-- 修复 3 轮未过：必须升级人工，不无限循环
+> **任务传递姿势 / 失败兜底机制 / 红线**：详见 `AGENTS.md §六.5`、`AGENTS.md §六.7`、`AGENTS.md §九`。本 SKILL 是 pipeline 流程编排，不重复通用规则。
 
 ---
 
 ## 部署
 
-```bash
-# 部署脚本
-cp scripts/pipeline.py ~/.hermes/scripts/
-chmod +x ~/.hermes/scripts/pipeline.py
-
-# 项目配置：编辑 ~/.hermes/config/projects.yaml
-# 详见 scripts/pipeline.py 顶部的 PROJECTS 示例
-```
+详见 `DEPLOY.md §5`。
 
 ---
 
-## 版本记录
-
-| 版本 | 日期 | 修改人 | 修改说明 |
-|------|------|--------|---------|
-| v1.0 | 2026-09-08 | Hermes | 初稿（融合版） |
+> 版本信息见仓库根 `CHANGELOG.md`（不再每个文件单独记录）。

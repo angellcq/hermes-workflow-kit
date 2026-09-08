@@ -44,45 +44,27 @@ err()  { echo -e "${RED}[$(date +%H:%M:%S)] ✗${NC} $*" >&2; }
 # 角色库
 # ════════════════════════════════════════════════════════════════
 
-# 16 个通用角色（与 ~/.claude/agents/*.md 对应）
-ROLES=(
-  "backend-developer"
-  "frontend-developer"
-  "fullstack-developer"
-  "mobile-developer"
-  "dba"
-  "devops"
-  "test-engineer"
-  "security-reviewer"
-  "code-reviewer"
-  "architect"
-  "planner"
-  "project-manager"
-  "build-error-resolver"
-  "docs-writer"
-  "tdd-guide"
-  "loop-operator"
-)
-
-# 角色描述
-ROLE_DESC=(
-  "通用后端开发（跨语言自适应）"
-  "通用前端开发（Vue/React/小程序自适应）"
-  "全栈开发（前后端贯通）"
-  "移动端开发（iOS/Android/Flutter/RN）"
-  "数据库设计与优化"
-  "CI/CD 与部署"
-  "测试（单测/集成/E2E）"
-  "安全审计"
-  "通用代码审查"
-  "架构决策"
-  "实施计划"
-  "PM 拆解/跟踪/风险"
-  "构建错误修复"
-  "文档生成"
-  "TDD 强制方法论"
-  "自主 Agent 循环监控"
-)
+# 角色库：动态扫描 $CLAUDE_AGENTS_DIR/*.md 的 frontmatter（name/description）。
+# 唯一事实源 = 仓库 通用角色库/*.md（部署到 ~/.claude/agents/）。
+# 新增角色只需：新增 .md → cp 到 ~/.claude/agents/ → 无需改本脚本。
+load_roles() {
+  ROLES=()
+  ROLE_DESC=()
+  local f name desc
+  for f in "$CLAUDE_AGENTS_DIR"/*.md; do
+    [[ -f "$f" ]] || continue
+    name=$(sed -n 's/^name:[[:space:]]*//p' "$f" | head -1)
+    [[ -z "$name" ]] && name=$(basename "$f" .md)
+    desc=$(sed -n 's/^description:[[:space:]]*//p' "$f" | head -1)
+    desc=${desc#\"}; desc=${desc%\"}
+    ROLES+=("$name")
+    ROLE_DESC+=("${desc:0:60}")
+  done
+  if [[ ${#ROLES[@]} -eq 0 ]]; then
+    warn "未在 $CLAUDE_AGENTS_DIR 发现任何角色 .md（先运行 sync-roles-to-profiles.sh 部署）"
+  fi
+}
+load_roles
 
 cmd_roles() {
   echo "═══ 可用角色库（$(printf '%s\n' "${ROLES[@]}" | wc -l) 个）═══"
