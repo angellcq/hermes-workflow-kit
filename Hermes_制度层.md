@@ -234,7 +234,7 @@ python ~/.hermes/scripts/pipeline.py \
 
 跨语言场景下，**项目根 AGENTS.md/AGENT.md/.hermes.md/README** 拥有最高优先级：
 - 项目级规范 → 覆盖全局默认
-- 项目级规范缺失 → 使用全局默认（来自模板 11 + cross-language 技能）
+- 项目级规范缺失 → 使用全局默认（来自 编码规范_跨语言.md + cross-language 技能）
 - 项目级与全局冲突 → 触发 L2 协商
 
 ---

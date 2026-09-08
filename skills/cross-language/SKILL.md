@@ -63,44 +63,44 @@ bash ~/.hermes/scripts/cross-language.sh detect <项目路径>
 
 ## 语言类型与加载规范
 
-检测到语言后，加载对应的规范章节（详见模板 11）：
+检测到语言后，加载 `Hermes模板库/编码规范_跨语言.md` 对应章节：
 
 | 语言/栈 | 加载章节 | 工具链 |
 |---------|---------|--------|
-| JavaScript / TypeScript | §3.2 + §5.2 | ESLint + Prettier + Vitest |
-| Python | §3.2 | ruff + pytest |
-| Java | §2.2 Java | javac + JUnit 5 + JaCoCo |
-| Kotlin | §2.2 Kotlin | kotlinc + JUnit 5 + Kover |
-| Go | §2.2 Go | go vet + go test |
-| Rust | §2.2 Rust | cargo clippy + cargo test |
-| C++ | §2.2 C++ | cmake + gtest + gcov |
-| C# | §2.2 C# | dotnet build + xUnit + coverlet |
-| Swift | §2.2 Swift + §6.1 | xcodebuild + XCTest |
-| Ruby | §3.2 Ruby | rubocop + RSpec |
-| PHP | §3.2 PHP | php-cs-fixer + PHPUnit |
-| Vue 3 | §5.2 Vue 3 | ESLint + Vitest + Vue Test Utils |
-| React | §5.2 React | ESLint + Vitest + RTL |
-| Svelte | §5.2 Svelte | ESLint + Vitest |
-| 微信小程序 | §5.2 微信小程序 | miniprogram-automator |
-| Flutter | §6.3 | flutter test + integration_test |
-| React Native | §6.4 | TypeScript + Hermes |
-| Bash | §4.2 Bash | shellcheck + bats |
-| PowerShell | §4.2 PowerShell | PSScriptAnalyzer + Pester |
-| SQL | §7.1 | sqlfluff + 项目 DB 工具 |
-| 混合栈 | §8 | 各栈工具链并用 |
+| JavaScript / TypeScript | §十三 + §十五 | ESLint + Prettier + Vitest |
+| Python | §十三 | ruff + pytest |
+| Java | §十二 | javac + JUnit 5 + JaCoCo |
+| Kotlin | §十二 | kotlinc + JUnit 5 + Kover |
+| Go | §十二 | go vet + go test |
+| Rust | §十二 | cargo clippy + cargo test |
+| C++ | §十二 | cmake + gtest + gcov |
+| C# | §十二 | dotnet build + xUnit + coverlet |
+| Swift | §十二 | xcodebuild + XCTest |
+| Ruby | §十三 | rubocop + RSpec |
+| PHP | §十三 | php-cs-fixer + PHPUnit |
+| Vue 3 | §十五 | ESLint + Vitest + Vue Test Utils |
+| React | §十五 | ESLint + Vitest + RTL |
+| Svelte | §十五 | ESLint + Vitest |
+| 微信小程序 | §十五 | miniprogram-automator |
+| Flutter | §十六 | flutter test + integration_test |
+| React Native | §十六 | TypeScript + Hermes |
+| Bash | §十四 | shellcheck + bats |
+| PowerShell | §十四 | PSScriptAnalyzer + Pester |
+| SQL | §17.1 | sqlfluff + 项目 DB 工具 |
+| 混合栈 | §十八 | 各栈工具链并用 |
 
 ---
 
 ## 规范优先级（重要）
 
 ```
-项目根 AGENTS.md/AGENT.md/.hermes.md/README  >  本技能 + 模板 11  >  Hermes 默认规范（00_编码规范_通用.md）
+项目根 AGENTS.md/AGENT.md/.hermes.md/README  >  本技能 + 编码规范_跨语言.md  >  Hermes 默认规范
 ```
 
 **冲突处理**：
 - 项目级与全局冲突 → 触发 L2 协商（Hermes 列差异，用户终审）
-- 项目级缺失规范 → 使用模板 11 默认
-- 模板 11 也缺失 → 使用 00_编码规范_通用.md 兜底
+- 项目级缺失规范 → 使用 编码规范_跨语言.md 默认
+- 编码规范_跨语言.md 也缺失 → 使用 AGENTS.md 默认规范兜底
 
 ---
 
@@ -120,8 +120,8 @@ def start_coding_task(task_id, workdir):
 
     # 3. 加载全局规范
     if project_rules is None:
-        # 用模板 11 + cross-language 默认
-        global_rules = load_from_template_11(lang_info['type'])
+        # 用 编码规范_跨语言.md + cross-language 默认
+        global_rules = load_from_coding_standard(lang_info['type'])
     else:
         global_rules = project_rules
 
