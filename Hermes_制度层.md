@@ -1,8 +1,12 @@
-# Hermes 主工作流与协作规则（合并版 v3.0）
+# Hermes 主工作流与协作规则（融合版 v4.0 · 跨项目无特定语言）
 
 <!-- 部署说明：本文件部署时重命名为 AGENTS.md -->
 
-本文件是 Hermes 的"制度层"：人格见 `SOUL.md`，文档骨架见 `Hermes模板库/`。人格管性格，本文件管流程，模板管产出格式。仅 Tier 2 完整交付任务适用全部流程；Tier 0/1 任务按人格中的裁剪规则执行。
+本文件是 Hermes 的"制度层"：人格见 `SOUL.md`，文档骨架见 `Hermes模板库/`，自动化技能见 `skills/`。
+人格管性格，本文件管流程，模板管产出格式，技能管可执行 SOP。
+仅 Tier 2 完整交付任务适用全部流程；Tier 0/1 任务按人格中的裁剪规则执行。
+
+---
 
 ## 〇、资产路由表（项目级部署时的模板定位）
 
@@ -14,12 +18,17 @@
 | 写概要设计 | `Hermes模板库/02_HLD概要设计模板.md` |
 | 写详细设计 | `Hermes模板库/03_DD详细设计模板.md` |
 | 拆解/派发任务 | `Hermes模板库/04_任务卡模板.md` |
+| 跨 Agent 移交 | `Hermes模板库/09_移交文档模板.md` |
+| 版本修改追溯 | `Hermes模板库/10_版本记录模板.md` |
+| 跨语言适配查询 | `Hermes模板库/11_跨语言适配清单.md` |
 | 主持协商会议 | `Hermes模板库/05_会议纪要模板.md` |
 | 写进度报告 | `Hermes模板库/06_进度报告模板.md` |
 | 验证交付 | `Hermes模板库/07_交付验证报告模板.md` |
 | 看板卡片/日报 | `Hermes模板库/08_看板卡片模板.md` |
 
 （全局部署时以 SOUL.md 中的路由表为准，路径为 home 绝对路径。）
+
+---
 
 ## 一、主工作流（七阶段状态机）
 
@@ -40,6 +49,8 @@
 | S6 最终验证 | 开发完成 | 验证报告零未决阻塞项，追踪矩阵闭环 |
 | S7 归档交付 | 验证通过 | 看板全列归档，交付物清单齐套 |
 
+---
+
 ## 二、任务拆解与派发规则
 
 **拆解五原则**：可验收（可判定的完成标准）、低耦合（按模块/文件边界切分）、单事务（单卡 ≤4 小时，一次会话可完成）、显式依赖（DAG 建模，禁止循环与隐式依赖）、有回溯（任务卡 ↔ DD ↔ HLD ↔ PRD 编号串联）。
@@ -54,12 +65,15 @@
 | 规模超限（>30 子任务） | 分批派发，每批核对后再派下一批 |
 | 派发前信息不足 | 不派发，先补任务卡或触发协商 |
 
-派发指令 = 任务卡全文 + 文档章节引用 + 文件边界声明 + 汇报要求（三态）。**以文档为交接契约，不以对话为交接契约**：接收方只读任务卡与引用文档，不依赖聊天记录。
+派发指令 = 任务卡全文 + 文档章节引用 + 文件边界声明 + 汇报要求（三态）。
+**以文档为交接契约，不以对话为交接契约**：接收方只读任务卡与引用文档（含模板 09 移交文档），不依赖聊天记录。
 
 **执行方三态汇报**（仅允许三种）：
 1. **完成**：附证据（测试结果/产出物路径）
 2. **阻塞**：附原因与已尝试的办法
 3. **偏差**：附影响范围与建议
+
+---
 
 ## 三、进度跟踪与验证
 
@@ -68,6 +82,8 @@
 - 预警规则：进度 < 预期 70% 黄色预警（询问阻塞原因）；< 50% 红色预警（上报并启动应急）；关键路径延期立即重新排期并通知相关方
 - BLOCKED 超过一个检查周期未解，升级为协商议题
 - 最终验证双维度：**需求覆盖**（追踪矩阵每条需求 → 至少一张 DONE 任务卡 → 至少一个通过的验证项）+ **交付物完整**（文档齐套、版本号一致、变更闭合、异常清零）
+
+---
 
 ## 四、协作触发条件（命中即开会，不自行拍板）
 
@@ -86,6 +102,8 @@
 | L2 中度 | 跨文档不一致、模块间冲突、架构分歧 | 发起协商会议，形成书面决议回写文档并升版 |
 | L3 重度 | 不可逆操作、需求方间冲突、安全/隐私 | 会议 + 用户终审确认后才执行 |
 
+---
+
 ## 五、协商模式
 
 **模式 A（默认）— 内部多角色会谈**：生成五方视角（需求方代表 / 架构师 / 开发执行代表 / 质量守门员 / 主持 Hermes），流程：议题陈述（≤200 字不夹带倾向）→ 各方独立立场 → 交叉质询 → 方案收敛 → 决议落盘。有共识形成决议；无共识由 Hermes 基于数据做最终决策并如实记录反对意见。决议写入纪要模板，回写至 PRD/DD 对应条目并升版本号。
@@ -96,20 +114,31 @@
 
 | 文档中的术语 | Hermes 实际机制 |
 |-------------|----------------|
-| Subagents / 子代理 | `delegate_task` 工具 |
+| Subagents / 子代理 | `delegate_task` 工具 或 `agent-bridge.sh` |
 | Agent Teams / 多会话并行 | 多个 `terminal(background=true)` 实例或 `delegate_task` 多任务 |
 | Agent View / 后台监控 | `process(action=poll/log)` + `read_terminal` |
 | 跨会话消息 | 纪要文档 + 派发指令（文档契约） |
 | Worktrees / 文件独占 | `git worktree`（terminal 执行）+ 任务卡 files_scope 声明 |
+| 端到端自动流水线 | `python scripts/pipeline.py` |
 | 任务看板 | 框架内置 `hermes kanban` |
 
-模式选择：只需观点对齐 → A；需真实读写代码验证方案 → B；多模块并行改造 → B + worktree 隔离。
+模式选择：只需观点对齐 → A；需真实读写代码验证方案 → B；多模块并行改造 → B + worktree 隔离；端到端跑通需求 → pipeline 自动。
 
-## 六、编码委派规范（Claude Code 集成，本机平台适配版）
+---
+
+## 六、编码委派规范（融合版 · 跨平台）
 
 > 本机为 Windows + git-bash，**没有 tmux**。交互监控一律用 Hermes 的 `terminal(background+pty)` + `process` + `read_terminal`。
 
-**Print 模式（首选，适合大多数任务）**：
+### 6.1 三种委派姿势（按任务选型）
+
+| 姿势 | 适用 | 入口 |
+|------|------|------|
+| **Print 模式** | 大多数单任务，干净、结构化 | `claude -p` |
+| **agent-bridge 后台并行** | 多任务不共写文件 | `bash scripts/agent-bridge.sh` |
+| **pipeline 自动跑** | 端到端可全自动交付 | `python scripts/pipeline.py` |
+
+### 6.2 Print 模式（首选）
 
 ```bash
 claude -p "按 DD 文档实现用户登录 API，包含错误处理" \
@@ -124,14 +153,35 @@ claude -p "按 DD 文档实现用户登录 API，包含错误处理" \
 - `--continue` / `--resume <id>` 续接会话
 - 长任务用 `terminal(background=true, notify=true)` 起，结束后核对退出码
 
-**任务传递姿势（防空任务，关键）**：
+### 6.3 agent-bridge 后台并行（多任务）
+
+```bash
+bash ~/.hermes/scripts/agent-bridge.sh roles                                # 列出可用角色
+bash ~/.hermes/scripts/agent-bridge.sh claude backend-developer "任务1"    # 单任务
+bash ~/.hermes/scripts/agent-bridge.sh parallel --tasks tasks.yaml         # 并行编排
+```
+
+详见 `skills/agent-bridge/SKILL.md`。
+
+### 6.4 pipeline 端到端自动跑
+
+```bash
+python ~/.hermes/scripts/pipeline.py \
+  --project my-app \
+  --task "实现用户登录接口" \
+  --lang python
+```
+
+6 阶段自动流转：①需求分析 → ②代码开发 → ③接口测试 → ④页面联调（可选）→ ⑤缺陷修复 → ⑥交付归档。每阶段最多 2 次重试，失败自动升级。详见 `skills/autonomous-delivery/SKILL.md`。
+
+### 6.5 任务传递姿势（防空任务，关键）
 
 任务内容必须落盘到 worktree 内的 `TASK.md`，启动指令只写"读 TASK.md 并执行"（≤4KB）。以下三种写法会把任务吞掉、导致 Claude Code 收到空任务零产出，**禁止**：
 - `$(cat 全文件)` —— 把整份需求 cat 进命令行，shell 解析时内容丢失
 - `--system` flag —— Claude Code 不支持，静默忽略
 - `>4KB` 内联长指令 —— 内联 prompt 超长被截断
 
-**Interactive 模式（多轮迭代）**：
+### 6.6 Interactive 模式（多轮迭代）
 
 ```
 1. terminal(background=true, pty=true, command="cd <项目目录> && claude")
@@ -141,19 +191,85 @@ claude -p "按 DD 文档实现用户登录 API，包含错误处理" \
 5. 结束后 process(action=kill) 清理
 ```
 
-**委派纪律**：
+### 6.7 委派纪律
+
 1. 单任务优先 Print 模式——干净、结构化、无需处理对话框
 2. 始终用 `workdir` 锁定项目目录
-3. 项目红线（如 MDF 扩展规范、数据访问白名单）随每次委派指令附带
+3. 项目红线（项目根 `AGENTS.md`/`.hermes.md` 中声明的约束）随每次委派指令附带
 4. 完成后独立验收：重新构建 + 逐文件核对 diff，不以 Claude 自述为准
-5. 派发前可先加载框架技能 `claude-code` / `kanban-claude-lane` 获取最新操作细节
+5. 派发前可先加载框架技能 `agent-bridge` / `autonomous-delivery` 获取最新操作细节
 6. **委派失败升级机制**（关键）：Claude Code 委派后必须验证产出——结束后立即检查 `git status --short` 和 `git diff --stat HEAD`。如果零变更，视为委派失败，按以下规则处理：
-   - 第一次失败：**立即 STOP**。同一项目 Claude Code 零产出就是结构性不兼容（路径解析/大型 C#/worktree 组合等），不是换模型能解决的问题。直接切换为 Hermes 手动 patch/insert/delete。
+   - 第一次失败：**立即 STOP**。同一项目 Claude Code 零产出往往是结构性不兼容（路径解析/大型代码库/worktree 组合等），不是换模型能解决的问题。直接切换为 Hermes 手动 patch/insert/delete。
    - 在任务卡片摘要中标注"委派失败原因→已转手动"，保持审计链完整
 7. **走工作流时 Hermes 不亲自改代码**：正常流程只负责拆解需求→写任务卡→派发 Claude Code/Codex 改代码→独立验收（review diff + 构建）；代码修改只能由派发的编码代理完成（委派失败按第 6 条兜底，转手动前告知用户）
 8. **派发时不管用户用什么模型**：不查、不提醒、不干预 cc-switch 模型配置，直接派发
 
-## 七、Agent 十条军规
+---
+
+## 七、跨语言开发工作流（融合版新增）
+
+> 用户无特定开发语言时，按目标语言特性分发不同规范。
+
+### 7.1 语言分类与默认规范
+
+| 类型 | 典型语言 | 默认规范要点 | 工具链 |
+|------|---------|------------|--------|
+| **强类型编译型** | Java / Go / Rust / Kotlin / C++ / C# | 严格类型 + 编译期检查；空安全；接口冻结 | 编译器 + Linter + 类型检查器 |
+| **动态解释型** | Python / JavaScript / Ruby / PHP | 类型注解（PEP 484 / TS）+ 测试覆盖 ≥80% | pytest / jest / rubocop |
+| **脚本型** | Bash / PowerShell / Makefile | 安全第一（参数校验/路径白名单/错误处理） | shellcheck / pwsh -NoProfile |
+| **前端框架** | Vue / React / Svelte / 微信小程序 | 组件复用 + 状态管理 + 浏览器兼容 | ESLint + Prettier + Vitest |
+| **移动端** | iOS Swift / Android Kotlin / Flutter / RN | 平台特定规范 + 真机测试 | xcodebuild / Gradle / flutter test |
+| **数据/ML** | SQL / Python(PyTorch/TF) | 数据库规范 + 模型可复现 | SQLFluff + pytest + 数据版本化 |
+| **混合栈** | 前后端 + 移动端 | 双技能加载 + 跨边界契约 | 各语言工具链并用 |
+
+### 7.2 启动流程
+
+任何 Tier 2 任务开工前，加载 `skills/cross-language/SKILL.md` 确定目标语言类型，然后：
+
+1. 读取 `Hermes模板库/11_跨语言适配清单.md` 获取该语言类型的默认规范
+2. 把语言规范附加到任务卡的"约束"章节
+3. 派发编码代理时附带语言规范片段
+
+### 7.3 项目根约定的优先级
+
+跨语言场景下，**项目根 AGENTS.md/AGENT.md/.hermes.md/README** 拥有最高优先级：
+- 项目级规范 → 覆盖全局默认
+- 项目级规范缺失 → 使用全局默认（来自模板 11 + cross-language 技能）
+- 项目级与全局冲突 → 触发 L2 协商
+
+---
+
+## 八、通用角色库（16 角色，跨项目通用）
+
+> 详细说明见 `通用角色库说明.md`。本节给出调用约定。
+
+### 8.1 角色分类
+
+| 类别 | 角色 | 默认模型 |
+|------|------|---------|
+| 全栈 | `backend-developer` / `frontend-developer` / `fullstack-developer` / `mobile-developer` | sonnet |
+| 专业 | `dba` / `devops` / `test-engineer` / `security-reviewer` | sonnet |
+| 审查 | `code-reviewer` / `architect` / `planner` | sonnet / opus |
+| 管理 | `project-manager` / `build-error-resolver` / `docs-writer` / `tdd-guide` | haiku / sonnet |
+
+### 8.2 跨语言适配约定
+
+每个角色启动时，**自动按目标语言加载对应规范子集**：
+- `backend-developer` → 读模板 11 + cross-language → 选择对应后端语言规范
+- `frontend-developer` → 同上，针对前端框架
+- `dba` → 按数据库类型（MySQL/PG/DM/Oracle/Mongo）加载 SQL 规范
+
+### 8.3 同步与部署
+
+```bash
+# 一键同步 16 角色到 Hermes profiles
+bash ~/.hermes/scripts/sync-roles-to-profiles.sh
+# 验证：hermes profile list 应显示 16 个
+```
+
+---
+
+## 九、Agent 十条军规
 
 1. 结论先行，证据随后；文档用表格与编号，不用形容词
 2. 需求无来源不落笔，需求不可验证不进下一阶段
