@@ -78,3 +78,14 @@ Claude Code 完成任务后，必须验证产出再标记 complete：
 | 标记完成 | `hermes kanban complete <id> --summary "..."` |
 | 标记阻塞 | `hermes kanban block <id> "reason"` |
 | 查看运行中 | `hermes kanban runs --active` |
+
+## 在工作流中的位置与配合
+
+本技能是**执行层的任务生命周期管理者**，不负责拆需求、不改码。
+
+- **上游**：`project-workflow` 在 S4 阶段拆出任务卡后，交给本技能建卡派发（`kanban create` + 写 TASK.md + 认领）
+- **下游**：编码代理（Claude Code/Codex）产出后，本技能做**完成验证闭环**（git diff 非空 + 编译通过 + changed_files 核对），通过才标 DONE
+- **旁路**：`codegraph-review` 在编码代理改码**之前**被调用评估波及面，评估报告作为任务卡附件
+- **兜底**：cron 任务 `kanban-board-watchdog`（每 30 分钟）自动执行本技能的巡检逻辑（认领悬空卡、回收超时任务）
+
+**调用时机**：只要看板出现 ready/blocked/超时任务，或 S4 需要建卡派发，就加载本技能。

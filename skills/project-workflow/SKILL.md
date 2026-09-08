@@ -81,3 +81,15 @@ S0 需求受理 → S1 需求澄清 → S2 PRD编写 → S3 HLD/DD设计
 - 实体类 AI 禁改
 - 禁 MyBatis / BaseDAO / DataSource / JPA
 - HTTP 仅 YmsHttpClientUtil，URL 走配置中心禁硬编码
+
+## 三技能分工（本技能是入口）
+
+本技能是**流程编排层**，只负责节奏推进，不亲自改码、不亲自建卡。
+
+| 阶段 | 调用哪个技能 | 做什么 |
+|------|------------|--------|
+| S4 拆卡派发 | `kanban-executor` | 建卡到看板、写 TASK.md、认领派发 |
+| 编码前 | `codegraph-review` | 评估改动符号的波及面，高危先确认 |
+| 编码后验收 | `kanban-executor` | 完成验证闭环（git diff + 编译 + 核对） |
+
+**推进纪律**：每阶段满足准出条件才进下一阶段；S4 拆出的卡交给 `kanban-executor`，S5 跟踪看板状态，S6 由 `kanban-executor` 验证产出。
