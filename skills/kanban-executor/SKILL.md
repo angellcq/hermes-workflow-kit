@@ -11,6 +11,40 @@ platforms: [windows, linux, macos]
 
 ## 核心能力
 
+### 0. 建卡派发（S4 唯一入口 · 硬闸门）
+
+**任何任务在写 TASK.md / 建 worktree / 派发编码代理之前，必须先 `hermes kanban create` 上板。**
+TASK.md 里的"当前状态"字段仅是缓存，看板才是唯一事实源；只写 TASK.md 不上板 = 漏板失职，
+且 watchdog 巡检只扫**已在板上**的卡，从未上板的卡不会有任何机制兜底。
+
+标准顺序（每张卡，命令照抄勿即兴发挥）：
+
+```bash
+# ① 建卡 —— 拿到 t_xxxxxxxx 才算这张卡存在
+hermes kanban create "T-NNN: <动词+对象+结果>" \
+  --body "TASK.md: <绝对路径> | 来源: <PRD/DD#章节> | files_scope: <边界>" \
+  --workspace worktree --branch claude/<slug> \
+  --idempotency-key T-NNN --initial-status running --json
+#    ↑ 防重复建卡            ↑ 手动 claude -p 派发时用 running 占位，
+#                              否则 ready 卡会被 dispatcher 认领后双跑
+
+# ② 自验卡片确实在板上（输出必须含 ① 返回的 id，否则视为建卡失败）
+hermes kanban list --json | python -c "import sys,json;[print(t['id'],t['status'],t['title'][:40]) for t in json.load(sys.stdin) if t['id']=='<①返回的id>']"
+
+# ③ 写 TASK.md 落盘 → 派发（dispatcher 自动认领，或手动 claude -p）
+
+# ④ 编码代理收口后立即回板（完成验证闭环见 §4）
+hermes kanban complete <id> --summary "<验收结论>" --metadata '{"commit":"<hash>","changed_files":[...]}'
+```
+
+约束：
+- 标题前缀 = 任务卡 ID（`T-003: ...`），看板 ↔ 任务卡双向可回溯
+- `--idempotency-key` 一律填任务卡 ID，补账/重跑天然去重
+- **会话收尾自查**：diff `.hermes/tasks/` 新增 TASK.md 与本会话建卡 id 清单，
+  发现漏板的当场补建并回补状态，禁止留给下次
+- 已合并的漏板历史任务补账：`create --initial-status running` 后立刻 `complete --summary "<commit+验收结论>"`；
+  未验收完的建卡后 `block <id> "<待办原因>"`，不许默默留在 ready
+
 ### 1. 未认领自动分配 (Auto-Claim)
 
 ```bash
@@ -72,6 +106,7 @@ Claude Code 完成任务后，必须验证产出再标记 complete：
 
 | 操作 | 命令 |
 |------|------|
+| **建卡（S4 第一步，见 §0）** | `hermes kanban create "T-NNN: <标题>" --body "..." --workspace worktree --branch claude/<slug> --idempotency-key T-NNN --initial-status running --json` |
 | 查看未分配任务 | `hermes kanban list --json` 过滤 ready+null assignee |
 | 分配任务 | `hermes kanban assign <id> <profile>` |
 | 查看任务详情 | `hermes kanban show <id>` |
@@ -83,7 +118,7 @@ Claude Code 完成任务后，必须验证产出再标记 complete：
 
 本技能是**执行层的任务生命周期管理者**，不负责拆需求、不改码。
 
-- **上游**：`project-workflow` 在 S4 阶段拆出任务卡后，交给本技能建卡派发（`kanban create` + 写 TASK.md + 认领）
+- **上游**：`project-workflow` 在 S4 阶段拆出任务卡后，交给本技能建卡派发（顺序固定为 **§0 建卡上板 → 写 TASK.md → 认领**，禁止先写 TASK.md 后补卡）
 - **下游**：编码代理（Claude Code/Codex）产出后，本技能做**完成验证闭环**（git diff 非空 + 编译通过 + changed_files 核对），通过才标 DONE
 - **旁路**：`codegraph-review` 在编码代理改码**之前**被调用评估波及面，评估报告作为任务卡附件
 - **兜底**：cron 任务 `kanban-board-watchdog`（每 30 分钟）自动执行本技能的巡检逻辑（认领悬空卡、回收超时任务）

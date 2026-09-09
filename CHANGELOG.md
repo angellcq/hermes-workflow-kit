@@ -4,6 +4,20 @@
 
 ---
 
+## v4.4.1（2026-09-09）— S4 看板硬闸门（修复"漏板"缺陷）
+
+背景：hljjt_hcgccloud 走工作流时 S4 只写 TASK.md + worktree 派发，从未执行 `hermes kanban create`，
+导致看板上看不到新增任务（当日 T-003/T-004 等 5 卡全部漏板），且 watchdog 只扫板上卡、无法兜底。
+
+| # | 改动 | 落点 |
+|---|------|------|
+| 1 | 新增 §0 建卡派发硬闸门：create → list 自验 → 写 TASK.md → 认领 的固定顺序 + 可照抄命令模板（--idempotency-key / --initial-status running 防双跑）+ 会话收尾漏板自查 | `skills/kanban-executor/SKILL.md` |
+| 2 | 命令速查表补 create 用法一行 | `skills/kanban-executor/SKILL.md` |
+| 3 | S4 加"顺序硬约束 + 准出闸门"：缺任一看板卡 id 即 S4 未准出，禁止进入 S5 / 禁止声称已建卡 | `skills/project-workflow/SKILL.md` |
+| 4 | 任务卡模板新增"看板卡 ID"必填栏（空 = 未准出），"当前状态"降格为缓存并注明事实源 | `Hermes模板库/04_任务卡模板.md` |
+
+---
+
 ## v4.4（2026-09-09）— SOLID/重构落地（报告 ≤8 分项全量整改）
 
 依据《理论落地分析报告》（综合 7.4/10）对全部 ≤8 分项实施修复。

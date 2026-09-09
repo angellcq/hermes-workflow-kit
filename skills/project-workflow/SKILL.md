@@ -48,8 +48,12 @@ S0 需求受理 → S1 需求澄清 → S2 PRD编写 → S3 HLD/DD设计
 ### S4 任务拆解与派发
 - 先读 `04_任务卡模板.md`
 - 拆解五原则：可验收 / 低耦合 / 单事务(≤4h) / 显式依赖 / 有回溯
-- 每张卡 → `hermes kanban create` + 写 TASK.md
+- **顺序硬约束**（详见 `kanban-executor` §0，命令照抄其模板）：
+  `hermes kanban create` 上板 → 自验 `hermes kanban list` 含本卡 id → 写 TASK.md → 认领派发。
+  **禁止**先写 TASK.md 或先建 worktree 再"回头补卡"；TASK.md 的"当前状态"仅是缓存，看板才是事实源
 - 派发策略：独立并行 / 依赖串行 / 同文件强制串行
+- **准出（硬闸门）**：本批每张卡都必须在回复中报告 `t_xxxxxxxx` 看板 id + 状态，且 `hermes kanban list`
+  实测条数 = 卡片数。**缺任一 id 即 S4 未准出，不得进入 S5，不得声称"任务已创建到看板"**
 
 ### S5 开发跟踪
 - 检查点驱动：派发确认时 / 里程碑 / 用户询问 / 阻塞时
