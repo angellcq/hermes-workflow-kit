@@ -53,7 +53,8 @@ bash tests/run_tests.sh
 | `通用角色库/` + `通用角色库说明.md` | 16 角色定义与清单 | **角色清单唯一源**（agent-bridge.sh 动态扫描自动同步） |
 | `skills/` | project-workflow / agent-bridge / autonomous-delivery / cross-language 等 | 技能入口 |
 | `scripts/` | agent-bridge.sh / pipeline.py / check-references.py 等 | 可执行工具 |
-| `tests/` | 最小测试集（run_tests.sh） | 回归防线 |
+| `config/` | projects.yaml / languages.yaml / stale-patterns.txt | **项目注册表与语言清单唯一源** |
+| `tests/` | 最小测试集（run_tests.sh + test_pipeline.py） | 回归防线 |
 | `DEPLOY.md` | 部署 SOP | — |
 | `USAGE.md` | 三种使用模式 | — |
 | `CHANGELOG.md` | 版本变更账本 | 版本记录唯一源 |
@@ -65,6 +66,8 @@ bash tests/run_tests.sh
 | 委派规范 / 失败兜底 | `Hermes_制度层.md` §六 | SKILL.md 引用 |
 | 角色清单 | `通用角色库说明.md` §二 + 角色 .md | agent-bridge.sh 运行时扫描 |
 | 编码规范（跨语言） | `Hermes模板库/编码规范_跨语言.md` | 角色文件引用 |
+| 项目注册表 | `config/projects.yaml` | pipeline.py 运行时加载 |
+| 语言清单 | `config/languages.yaml` | cross-language.sh 运行时加载 |
 | 版本记录 | `CHANGELOG.md` | 各文件不再附版本小表 |
 
 ## 许可

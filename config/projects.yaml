@@ -1,0 +1,36 @@
+# Hermes Pipeline — 项目注册表（唯一事实源）
+#
+# 加载顺序（pipeline.py load_projects）：
+#   1. --projects-config 显式指定
+#   2. 环境变量 HERMES_PROJECTS_YAML
+#   3. ~/.hermes/config/projects.yaml（部署环境）
+#   4. 本文件（仓库内置示例）
+#
+# 每个项目字段说明：
+#   path          项目根目录（必填）
+#   workdir       委派工作目录（默认同 path）
+#   lang          主语言（python/go/java/...，默认 python）
+#   frontend_url  前端地址（04 页面联调用，可省略）
+#   backend_base  后端地址（可省略）
+#   skip_e2e      是否跳过页面联调（默认 false）
+#   test_cmd      测试命令（03/05 用）
+#   api_test_cmd  接口测试命令（缺省回退 test_cmd）
+#   build_cmd     构建命令（可选）
+
+my-app:
+  path: "D:\\projects\\my-app"
+  workdir: "D:\\projects\\my-app"
+  lang: python
+  frontend_url: "http://localhost:3000"
+  backend_base: "http://localhost:8080"
+  skip_e2e: false
+  test_cmd: "pytest"
+  api_test_cmd: "pytest tests/api"
+  build_cmd: "make build"
+
+# 模板：复制以下结构添加新项目
+# another-project:
+#   path: "D:\\path\\to\\project"
+#   lang: go
+#   skip_e2e: true
+#   test_cmd: "go test ./..."

@@ -41,6 +41,78 @@ warn() { echo -e "${YELLOW}[$(date +%H:%M:%S)] ⚠${NC} $*" >&2; }
 err()  { echo -e "${RED}[$(date +%H:%M:%S)] ✗${NC} $*" >&2; }
 
 # ════════════════════════════════════════════════════════════════
+# 公共工具：TASK.md 写入（B2：cmd_claude / cmd_claude_bg 共用）
+# ════════════════════════════════════════════════════════════════
+
+# 用法：write_task_md <输出路径> <role> <task> <workdir> [task_id]
+write_task_md() {
+  local task_md="$1" role="$2" task="$3" workdir="$4" task_id="${5:-}"
+  {
+    echo "# 任务"
+    echo ""
+    echo "$task"
+    echo ""
+    echo "## 角色"
+    echo "$role"
+    echo ""
+    echo "## 工作目录"
+    echo "${workdir:-$(pwd)}"
+    if [[ -n "$task_id" ]]; then
+      echo ""
+      echo "## 任务 ID"
+      echo "$task_id"
+    fi
+  } > "$task_md"
+}
+
+# ════════════════════════════════════════════════════════════════
+# 公共工具：JSON 输出（A3：--json 机器可读契约）
+# ════════════════════════════════════════════════════════════════
+
+# 取可用的 JSON 处理器：jq 优先，python 兜底；都没有返回 1
+_json_bin() {
+  if command -v jq &>/dev/null; then echo "jq"; return 0; fi
+  if command -v python3 &>/dev/null; then echo "python3"; return 0; fi
+  if command -v python &>/dev/null; then echo "python"; return 0; fi
+  return 1
+}
+
+# 把 "name<TAB>desc" 行流转为 JSON 数组 [{name, description}]
+_lines_to_roles_json() {
+  local bin
+  bin=$(_json_bin) || { err "--json 需要 jq 或 python"; return 1; }
+  if [[ "$bin" == "jq" ]]; then
+    jq -R -s 'split("\n") | map(select(length > 0) | split("\t") | {name: .[0], description: .[1]})'
+  else
+    "$bin" -c '
+import json, sys
+rows = [l.split("\t", 1) for l in sys.stdin.read().splitlines() if l.strip()]
+print(json.dumps([{"name": r[0], "description": r[1] if len(r) > 1 else ""} for r in rows], ensure_ascii=False, indent=2))
+'
+  fi
+}
+
+# ════════════════════════════════════════════════════════════════
+# 并发锁（E1：update_active 的 active.json 读写互斥）
+# ════════════════════════════════════════════════════════════════
+
+# mkdir 原子锁（flock 在 MSYS/Windows 不一定可用，mkdir 全平台原子）
+acquire_lock() {
+  local lockdir="$1" i
+  for i in $(seq 1 100); do
+    if mkdir "$lockdir" 2>/dev/null; then return 0; fi
+    # 清理 30s 以上的死锁（持有者崩溃残留）
+    if [[ -d "$lockdir" ]] && [[ -n "$(find "$lockdir" -maxdepth 0 -mmin +0.5 2>/dev/null)" ]]; then
+      rmdir "$lockdir" 2>/dev/null || true
+    fi
+    sleep 0.1
+  done
+  return 1
+}
+
+release_lock() { rmdir "$1" 2>/dev/null || true; }
+
+# ════════════════════════════════════════════════════════════════
 # 角色库
 # ════════════════════════════════════════════════════════════════
 
@@ -71,7 +143,23 @@ load_roles() {
 load_roles
 
 cmd_roles() {
-  echo "═══ 可用角色库（$(printf '%s\n' "${ROLES[@]}" | wc -l) 个）═══"
+  local as_json=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --json) as_json=true; shift ;;
+      *) err "未知参数：$1"; return 1 ;;
+    esac
+  done
+
+  if $as_json; then
+    local i
+    for i in "${!ROLES[@]}"; do
+      printf '%s\t%s\n' "${ROLES[$i]}" "${ROLE_DESC[$i]}"
+    done | _lines_to_roles_json
+    return $?
+  fi
+
+  echo "═══ 可用角色库（${#ROLES[@]} 个）═══"
   echo ""
   printf '%-22s %s\n' "ROLE" "DESCRIPTION"
   printf '%-22s %s\n' "────" "───────────"
@@ -221,20 +309,7 @@ cmd_claude_bg() {
 
   # 写 TASK.md
   local task_md="$task_dir/TASK.md"
-  cat > "$task_md" <<EOF
-# 任务
-
-$task
-
-## 角色
-$role
-
-## 工作目录
-${workdir:-$(pwd)}
-
-## 任务 ID
-$task_id
-EOF
+  write_task_md "$task_md" "$role" "$task" "$workdir" "$task_id"
 
   # 写 status.json（启动中）
   cat > "$task_dir/status.json" <<EOF
@@ -277,6 +352,19 @@ EOF
 }
 
 update_active() {
+  # E1：active.json 读改写必须互斥，防止并发 claude-bg 互相覆盖
+  local lockdir="$ACTIVE_FILE.lock"
+  if ! acquire_lock "$lockdir"; then
+    err "active.json 锁等待超时（可能有进程持有锁超过 10s）"
+    return 1
+  fi
+  _update_active_locked "$@"
+  local rc=$?
+  release_lock "$lockdir"
+  return $rc
+}
+
+_update_active_locked() {
   local task_id="$1" role="$2" pid="$3" status="$4"
 
   if [[ -f "$ACTIVE_FILE" ]]; then
@@ -330,11 +418,12 @@ json.dump(data, sys.stdout, ensure_ascii=False, indent=2)
 # ════════════════════════════════════════════════════════════════
 
 cmd_monitor() {
-  local task_id=""
+  local task_id="" as_json=false
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --task-id) task_id="$2"; shift 2 ;;
+      --json) as_json=true; shift ;;
       *) err "未知参数：$1"; return 1 ;;
     esac
   done
@@ -350,6 +439,28 @@ cmd_monitor() {
     return 1
   fi
 
+  if $as_json; then
+    # status.json 原文即契约；附带日志尾部作为 log_tail 字段。
+    # 数据全部走 stdin/argv（不走路径 argv）——Windows Python 无法识别 MSYS 路径。
+    local bin log_tail
+    bin=$(_json_bin) || { err "--json 需要 jq 或 python"; return 1; }
+    log_tail=$(tail -n 30 "$task_dir/claude.log" 2>/dev/null || true)
+    if [[ "$bin" == "jq" ]]; then
+      jq --arg log "$log_tail" '. + {log_tail: $log}' "$task_dir/status.json"
+    else
+      cat "$task_dir/status.json" | "$bin" -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    data = {}
+data["log_tail"] = sys.argv[1]
+print(json.dumps(data, ensure_ascii=False, indent=2))
+' "$log_tail"
+    fi
+    return $?
+  fi
+
   echo "═══ 任务监控 [$task_id] ═══"
   echo ""
   echo "─── status.json ───"
@@ -360,6 +471,49 @@ cmd_monitor() {
 }
 
 cmd_list() {
+  local as_json=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --json) as_json=true; shift ;;
+      *) err "未知参数：$1"; return 1 ;;
+    esac
+  done
+
+  if $as_json; then
+    local bin
+    bin=$(_json_bin) || { err "--json 需要 jq 或 python"; return 1; }
+    if [[ -d "$TASK_BASE" ]]; then
+      # 各任务的 status.json 合并为数组（内容走 stdin，规避 MSYS 路径问题）
+      if [[ "$bin" == "jq" ]]; then
+        find "$TASK_BASE" -mindepth 2 -maxdepth 2 -name status.json -exec cat {} + 2>/dev/null \
+          | jq -s '.'
+      else
+        find "$TASK_BASE" -mindepth 2 -maxdepth 2 -name status.json -exec cat {} + 2>/dev/null \
+          | "$bin" -c '
+import json, sys
+buf = sys.stdin.read()
+dec = json.JSONDecoder()
+items, idx = [], 0
+while idx < len(buf):
+    while idx < len(buf) and buf[idx] not in "{":
+        idx += 1
+    if idx >= len(buf):
+        break
+    try:
+        obj, end = dec.raw_decode(buf, idx)
+        items.append(obj)
+        idx = end
+    except json.JSONDecodeError:
+        idx += 1
+print(json.dumps(items, ensure_ascii=False, indent=2))
+'
+      fi
+    else
+      echo "[]"
+    fi
+    return 0
+  fi
+
   echo "═══ 活跃任务 ═══"
   echo ""
   if [[ -d "$TASK_BASE" ]]; then
@@ -483,13 +637,13 @@ main() {
     cmd_roles
     echo ""
     echo "用法："
-    echo "  bash agent-bridge.sh roles"
+    echo "  bash agent-bridge.sh roles [--json]"
     echo "  bash agent-bridge.sh claude <role> \"<task>\" [--workdir DIR] [--max-turns N]"
     echo "  bash agent-bridge.sh claude-bg <role> \"<task>\" --task-id <id>"
     echo "  bash agent-bridge.sh codex <role> \"<task>\""
     echo "  bash agent-bridge.sh parallel --tasks <yaml>"
-    echo "  bash agent-bridge.sh monitor --task-id <id>"
-    echo "  bash agent-bridge.sh list"
+    echo "  bash agent-bridge.sh monitor --task-id <id> [--json]"
+    echo "  bash agent-bridge.sh list [--json]"
     echo "  bash agent-bridge.sh kill --task-id <id>"
     exit 1
   fi
@@ -498,13 +652,13 @@ main() {
   shift
 
   case "$cmd" in
-    roles)       cmd_roles ;;
+    roles)       cmd_roles "$@" ;;
     claude)      cmd_claude "$@" ;;
     claude-bg)   cmd_claude_bg "$@" ;;
     codex)       cmd_codex "$@" ;;
     parallel)    cmd_parallel "$@" ;;
     monitor)     cmd_monitor "$@" ;;
-    list)        cmd_list ;;
+    list)        cmd_list "$@" ;;
     kill)        cmd_kill "$@" ;;
     -h|--help|help)
       main

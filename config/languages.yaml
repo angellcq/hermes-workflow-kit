@@ -1,0 +1,42 @@
+# Hermes 语言清单（唯一事实源）
+#
+# 消费方：
+#   - scripts/cross-language.sh detect  → markers / extensions
+#   - scripts/cross-language.sh list    → categories
+#   - skills/cross-language/SKILL.md    → 文档引用（不复制清单）
+#
+# 修改规则：新增语言只改本文件，脚本运行时读取，无需改代码。
+
+# 特征文件 → 语言类型（detect 优先级 2，按文件检查，先中先得）
+markers:
+  package.json: javascript/typescript
+  pyproject.toml: python
+  setup.py: python
+  requirements.txt: python
+  pom.xml: java
+  build.gradle: java/kotlin
+  build.gradle.kts: kotlin
+  go.mod: go
+  Cargo.toml: rust
+  "*.csproj": csharp
+  "*.sln": csharp
+  Podfile: ios-swift
+  pubspec.yaml: flutter/dart
+  composer.json: php
+  Gemfile: ruby
+  Mix.exs: elixir
+  CMakeLists.txt: cpp
+  stack.yaml: haskell
+
+# 扩展名统计（detect 优先级 3，统计这些后缀的出现频次）
+extensions: [py, js, ts, go, rs, java, kt, cs, swift, dart, rb, php]
+
+# 语言分类（list 命令展示）
+categories:
+  强类型编译型: [java, kotlin, go, rust, cpp, csharp, swift]
+  动态解释型: [javascript, typescript, python, ruby, php]
+  脚本型: [bash, powershell, makefile]
+  前端框架: [vue, react, svelte, wechat-mp]
+  移动端: [ios-swift, android-kotlin, flutter, react-native]
+  数据/ML: [sql, python-ml, r]
+  混合栈: [fullstack, microservices, polyglot]

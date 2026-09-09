@@ -4,6 +4,41 @@
 
 ---
 
+## v4.4（2026-09-09）— SOLID/重构落地（报告 ≤8 分项全量整改）
+
+依据《理论落地分析报告》（综合 7.4/10）对全部 ≤8 分项实施修复。
+
+### 改动
+
+| # | 分项 | 改动 | 落点 |
+|---|------|------|------|
+| 1 | B4 6→9 | Status 常量类 + stage_index() 序号比较，消灭 `from_stage <= "02"` 字符串序比较；状态字面量唯一来源 | `scripts/pipeline.py` |
+| 2 | D1 5→9 | CommandRunner 协议 + SubprocessRunner/FakeRunner 依赖注入；阶段函数全部走注入 runner | `scripts/pipeline.py` |
+| 3 | A3 7→9 | agent-bridge roles/list/monitor 支持 `--json` 机器可读输出（jq 优先 python 兜底，数据走 stdin 规避 MSYS 路径陷阱） | `scripts/agent-bridge.sh` |
+| 4 | B3 7→9 | orchestrate 拆为 resolve_config / setup_worktree / run_stage_with_retry / summarize / cleanup_worktree 五段 | `scripts/pipeline.py` |
+| 5 | B2 7→9 | cmd_claude / cmd_claude_bg 写 TASK.md 提取为共用 write_task_md()；orchestrate 移除与 stage_04 重复的 skip 分支 | `scripts/agent-bridge.sh` `pipeline.py` |
+| 6 | C2 6→9 | PROJECTS 硬编码迁出 → `config/projects.yaml`；load_projects() 纯函数（显式路径权威，搜索：参数→env→部署目录→仓库） | `config/projects.yaml` `pipeline.py` |
+| 7 | C3 7→9 | 语言清单迁出 → `config/languages.yaml`（markers/extensions/categories），cross-language.sh 零硬编码清单 | `config/languages.yaml` `scripts/cross-language.sh` |
+| 8 | C4 7→9 | Stage dataclass 注册表驱动编排；新增阶段 = 注册一行，orchestrate 不变（OCP） | `scripts/pipeline.py` |
+| 9 | D2 6→9 | `tests/test_pipeline.py` 29 个单元测试（注册表/状态/配置加载/重试分支/阶段函数/编排端到端），接入 run_tests.sh 段7 | `tests/test_pipeline.py` |
+| 10 | E2 6→9 | check-references 升级章节级契约：`xxx.md §anchor` 校验目标章节真实存在（中文/阿拉伯/混合锚点规范化 + AGENTS.md/SOUL.md 别名）；失效模式清单外置 `config/stale-patterns.txt` | `scripts/check-references.py` |
+| 11 | E1 8→9 | update_active 加 mkdir 原子锁（含 30s 死锁清理），防止并发 claude-bg 覆盖 active.json | `scripts/agent-bridge.sh` |
+| 12 | E3 6→9 | 全局可变状态清零：PROJECTS 模块级字典删除，改 load_projects() 纯函数 + 调用方注入 | `scripts/pipeline.py` |
+
+### 测试
+
+- `tests/run_tests.sh` 扩展为 9 段（新增：pipeline 单测 / cross-language 清单加载 / --json 契约）
+- `python -m unittest discover -s tests` → 29/29 通过
+- check-references 负向验证：注入 `§九十九`/`§六.99` 假锚点可捕获，恢复后全绿
+
+### 兼容性
+
+- pipeline 报告 JSON 格式不变（status 字符串原值保留）
+- CLI 参数全部保留，新增 `--projects-config`
+- agent-bridge 文本输出不变，`--json` 为可选标志
+
+---
+
 ## v4.1（2026-09-08）— 精简版
 
 ### 改动

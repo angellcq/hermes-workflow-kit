@@ -29,12 +29,19 @@ cp "E:/GitHub/hermes-workflow-kit/CHANGELOG.md" ~/.hermes/
 cp "E:/GitHub/hermes-workflow-kit/USAGE.md" ~/.hermes/
 cp "E:/GitHub/hermes-workflow-kit/通用角色库说明.md" ~/.hermes/
 
-# ═══ 4. 复制模板库与脚本 ═══
+# ═══ 4. 复制模板库、脚本与配置 ═══
 cp -r "E:/GitHub/hermes-workflow-kit/Hermes模板库" ~/.hermes/Hermes模板库
 cp -r "E:/GitHub/hermes-workflow-kit/skills" ~/.hermes/skills
 mkdir -p ~/.hermes/scripts
 cp -r "E:/GitHub/hermes-workflow-kit/scripts/." ~/.hermes/scripts/
 chmod +x ~/.hermes/scripts/*.sh
+
+# ═══ 4.1 复制配置（pipeline 项目表 / 语言清单 / 失效模式清单） ═══
+mkdir -p ~/.hermes/config
+cp "E:/GitHub/hermes-workflow-kit/config/projects.yaml" ~/.hermes/config/
+cp "E:/GitHub/hermes-workflow-kit/config/languages.yaml" ~/.hermes/config/
+cp "E:/GitHub/hermes-workflow-kit/config/stale-patterns.txt" ~/.hermes/config/
+# 按需编辑 ~/.hermes/config/projects.yaml 注册你的项目
 
 # ═══ 5. 部署通用角色库到 Claude Code ═══
 mkdir -p ~/.claude/agents
@@ -59,9 +66,10 @@ bash ~/.hermes/scripts/sync-roles-to-profiles.sh
 ├── CHANGELOG.md                   ← 版本变更
 ├── USAGE.md                       ← 使用模式
 ├── 通用角色库说明.md                ← 16 角色定位
-├── Hermes模板库/                   ← 12 个模板（00~11）
-├── skills/                        ← 6 个 SOP
-└── scripts/                       ← 4 个脚本
+├── Hermes模板库/                   ← 模板与编码规范
+├── skills/                        ← SOP 技能
+├── scripts/                       ← 可执行脚本
+└── config/                        ← projects.yaml / languages.yaml / stale-patterns.txt
 
 ~/.claude/agents/                  ← 16 个角色定义（来自通用角色库/）
 ```

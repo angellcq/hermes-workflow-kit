@@ -32,7 +32,7 @@ for f in scripts/*.sh; do
   if bash -n "$f" 2>/dev/null; then ok "$(basename "$f")"; else bad "$(basename "$f") 语法错误"; fi
 done
 
-echo "══ [2/6] python 编译检查 ══"
+echo "══ [2/9] python 编译检查 ══"
 if [[ -z "$PY" ]]; then
   bad "未找到 python，跳过"
 else
@@ -102,6 +102,46 @@ else
 fi
 rm -f "$TMPJ"; rmdir "$TB" 2>/dev/null
 rmdir "$ROOT/.test-tmp/proj" 2>/dev/null; rmdir "$ROOT/.test-tmp" 2>/dev/null
+
+echo "══ [7/9] pipeline 单元测试（FakeRunner 注入）══"
+if [[ -z "$PY" ]]; then
+  bad "未找到 python，跳过"
+elif "$PY" -m unittest discover -s tests -p "test_*.py" >/dev/null 2>&1; then
+  ok "test_pipeline.py 全部通过"
+else
+  bad "pipeline 单元测试失败（python -m unittest discover -s tests 查看详情）"
+fi
+
+echo "══ [8/9] cross-language 清单加载 ══"
+if bash scripts/cross-language.sh list 2>/dev/null | grep -q "强类型编译型"; then
+  ok "languages.yaml categories 加载"
+else
+  bad "cross-language list 加载失败"
+fi
+TP2="$ROOT/.test-tmp/pyproj"; mkdir -p "$TP2"; touch "$TP2/pyproject.toml"
+if bash scripts/cross-language.sh detect "$TP2" 2>/dev/null | grep -q "pyproject.toml → python"; then
+  ok "languages.yaml markers 检测"
+else
+  bad "cross-language detect 失败"
+fi
+rm -f "$TP2/pyproject.toml"; rmdir "$TP2" 2>/dev/null; rmdir "$ROOT/.test-tmp" 2>/dev/null
+
+echo "══ [9/9] agent-bridge --json 输出契约 ══"
+ROLES_JSON=$(CLAUDE_AGENTS_DIR="通用角色库" bash scripts/agent-bridge.sh roles --json 2>/dev/null)
+if echo "$ROLES_JSON" | grep -q '"name": "backend-developer"' && echo "$ROLES_JSON" | grep -q '"description"'; then
+  ok "roles --json（16 角色 JSON 数组）"
+else
+  bad "roles --json 输出异常"
+fi
+TB2="$ROOT/.test-tmp/tasks"; mkdir -p "$TB2/t-j1"
+printf '{"task_id":"t-j1","status":"running"}\n' > "$TB2/t-j1/status.json"
+MON_JSON=$(TASK_BASE="$TB2" CLAUDE_AGENTS_DIR="通用角色库" bash scripts/agent-bridge.sh monitor --task-id t-j1 --json 2>/dev/null)
+if echo "$MON_JSON" | grep -q '"task_id": "t-j1"'; then
+  ok "monitor --json（status.json + log_tail）"
+else
+  bad "monitor --json 输出异常"
+fi
+rm -f "$TB2/t-j1/status.json"; rmdir "$TB2/t-j1" 2>/dev/null; rmdir "$TB2" 2>/dev/null; rmdir "$ROOT/.test-tmp" 2>/dev/null
 
 echo ""
 echo "═══ 结果：$PASS 通过 / $FAIL 失败 ═══"
