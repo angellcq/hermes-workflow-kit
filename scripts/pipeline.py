@@ -56,10 +56,11 @@ class Status:
 # 全局配置（不可变常量）
 # ════════════════════════════════════════════════════════════════
 
-HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+# 自定位项目根：脚本部署在 <项目>/.hermes/scripts/，parent.parent 即 .hermes/ 根
+REPO_ROOT = Path(__file__).resolve().parent.parent
+HERMES_HOME = Path(os.environ.get("HERMES_HOME", REPO_ROOT))
 AGENT_BRIDGE_SH = HERMES_HOME / "scripts" / "agent-bridge.sh"
 REPORT_BASE = Path.home() / ".workbuddy" / "pipeline-reports"
-REPO_ROOT = Path(__file__).resolve().parent.parent
 
 MAX_RETRIES = 2
 RETRY_INTERVAL_SEC = 5

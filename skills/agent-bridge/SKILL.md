@@ -18,16 +18,16 @@ platforms: [windows, linux, macos]
 
 ```bash
 # 列出可用角色
-bash ~/.hermes/scripts/agent-bridge.sh roles
+bash .hermes/scripts/agent-bridge.sh roles
 
 # 单任务调用（角色扮演）
-bash ~/.hermes/scripts/agent-bridge.sh claude backend-developer "实现用户登录 API"
+bash .hermes/scripts/agent-bridge.sh claude backend-developer "实现用户登录 API"
 
 # 后台并行（多任务）
-bash ~/.hermes/scripts/agent-bridge.sh parallel --tasks tasks.yaml
+bash .hermes/scripts/agent-bridge.sh parallel --tasks tasks.yaml
 
 # 监控后台任务
-bash ~/.hermes/scripts/agent-bridge.sh monitor --task-id t-001
+bash .hermes/scripts/agent-bridge.sh monitor --task-id t-001
 ```
 
 **触发词**：「bridge 调用」「后台并行」「角色扮演」「多 Agent 编排」
@@ -51,11 +51,11 @@ bash agent-bridge.sh roles
 #   architect           架构决策
 #   ...
 
-# 调用时自动读取 ~/.claude/agents/<role>.md 作为 system prompt
+# 调用时自动读取 .hermes/通用角色库/<role>.md 作为 system prompt
 ```
 
 **角色定义路径**：
-- Claude Code：`~/.claude/agents/<role>.md`（必须存在，否则报错）
+- Claude Code：`.hermes/通用角色库/<role>.md`（必须存在，否则报错）
 - Codex：`~/.codex/agents/<role>.md`（可选）
 
 ---
@@ -71,7 +71,7 @@ bash agent-bridge.sh claude <role> "<任务>"
 ```
 
 **实现细节**：
-1. 读取 `~/.claude/agents/<role>.md` 作为 system prompt
+1. 读取 `.hermes/通用角色库/<role>.md` 作为 system prompt
 2. 把角色提示词 + 任务拼接为输入
 3. 调用 `claude -p` 执行
 4. 输出 JSON 格式结果（含 session_id/cost/turns）

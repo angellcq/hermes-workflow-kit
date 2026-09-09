@@ -30,7 +30,7 @@ resolve_lang_config() {
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   local candidates=(
     "${HERMES_LANG_YAML:-}"
-    "${HERMES_HOME:-$HOME/.hermes}/config/languages.yaml"
+    "${HERMES_HOME:-$(dirname "$script_dir")}/config/languages.yaml"
     "$script_dir/../config/languages.yaml"
   )
   local c

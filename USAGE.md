@@ -39,7 +39,7 @@ S7 归档（看板卡片 + 交付报告）
 
 ```bash
 # 单条命令端到端跑通 6 阶段
-python ~/.hermes/scripts/pipeline.py \
+python .hermes/scripts/pipeline.py \
   --project my-app \
   --task "实现用户登录接口" \
   --lang python

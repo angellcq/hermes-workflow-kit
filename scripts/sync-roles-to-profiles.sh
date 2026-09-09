@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
 # Hermes Sync Roles to Profiles — 通用角色库 → Hermes profiles 同步脚本
-# 把 ~/.claude/agents/*.md 一键同步为 Hermes profiles
+# 把 .hermes/通用角色库/*.md 一键同步为 Hermes profiles
 #
 # Usage:
 #   bash sync-roles-to-profiles.sh [--dry-run] [--limit N]
 #
 # 默认行为：
-#   1. 扫描 ~/.claude/agents/*.md
+#   1. 扫描 .hermes/通用角色库/*.md
 #   2. 对每个角色，调用 `hermes profile create <name> --no-skills`
 #   3. 复制角色定义到 profiles/<name>/AGENT.md
 #   4. 默认用 sonnet 模型
 
 set -euo pipefail
 
-CLAUDE_AGENTS_DIR="${CLAUDE_AGENTS_DIR:-$HOME/.claude/agents}"
+# 自定位：脚本部署在 <项目>/.hermes/scripts/，角色库在上级 .hermes/通用角色库/
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLAUDE_AGENTS_DIR="${CLAUDE_AGENTS_DIR:-$(dirname "$SCRIPT_DIR")/通用角色库}"
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 DEFAULT_MODEL="${DEFAULT_MODEL:-sonnet}"
 DRY_RUN=false

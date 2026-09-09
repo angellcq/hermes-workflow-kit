@@ -19,7 +19,7 @@ platforms: [windows, linux, macos]
 ```bash
 # 启动某个编码任务时，agent 内部自动加载本技能
 # 手动查询：
-bash ~/.hermes/scripts/cross-language.sh detect <项目路径>
+bash .hermes/scripts/cross-language.sh detect <项目路径>
 # 输出该项目的语言类型 + 应加载的规范章节
 ```
 
@@ -264,10 +264,10 @@ mvn install
 
 ```bash
 # 部署脚本
-cp scripts/cross-language.sh ~/.hermes/scripts/
-chmod +x ~/.hermes/scripts/cross-language.sh
+cp scripts/cross-language.sh .hermes/scripts/
+chmod +x .hermes/scripts/cross-language.sh
 
-# 配套模板（已部署到 ~/.hermes/Hermes模板库/编码规范_跨语言.md）
+# 配套模板（已部署到 .hermes/Hermes模板库/编码规范_跨语言.md）
 ```
 
 ---

@@ -18,8 +18,10 @@ set -euo pipefail
 # 全局配置
 # ════════════════════════════════════════════════════════════════
 
-HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
-CLAUDE_AGENTS_DIR="${CLAUDE_AGENTS_DIR:-$HOME/.claude/agents}"
+# 自定位项目根：脚本部署在 <项目>/.hermes/scripts/，上级即 .hermes/ 根
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HERMES_HOME="${HERMES_HOME:-$(dirname "$SCRIPT_DIR")}"
+CLAUDE_AGENTS_DIR="${CLAUDE_AGENTS_DIR:-$HERMES_HOME/通用角色库}"
 TASK_BASE="${TASK_BASE:-$HOME/.workbuddy/agent-bridge/tasks}"
 FAILURES_LOG="${FAILURES_LOG:-$HOME/.workbuddy/agent-bridge/failures.log}"
 ACTIVE_FILE="${ACTIVE_FILE:-$HOME/.workbuddy/agent-bridge/active.json}"
@@ -117,8 +119,8 @@ release_lock() { rmdir "$1" 2>/dev/null || true; }
 # ════════════════════════════════════════════════════════════════
 
 # 角色库：动态扫描 $CLAUDE_AGENTS_DIR/*.md 的 frontmatter（name/description）。
-# 唯一事实源 = 仓库 通用角色库/*.md（部署到 ~/.claude/agents/）。
-# 新增角色只需：新增 .md → cp 到 ~/.claude/agents/ → 无需改本脚本。
+# 唯一事实源 = 仓库 通用角色库/*.md（部署到 .hermes/通用角色库/）。
+# 新增角色只需：新增 .md → cp 到 .hermes/通用角色库/ → 无需改本脚本。
 load_roles() {
   ROLES=()
   ROLE_DESC=()

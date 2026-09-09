@@ -1,40 +1,47 @@
 # Hermes Workflow Kit
 
-Hermes 多 Agent 开发工作流套件：人格（SOUL）+ 制度（AGENTS）+ 模板库 + 通用角色库 + 技能与脚本，覆盖从需求澄清到交付验证的全链路。
+Hermes 多 Agent 开发工作流套件（**项目级部署**）：制度层（人格内核 + 七阶段流程 + 委派规范 + 军规）+ 模板库 + 通用角色库 + 技能与脚本，覆盖从需求澄清到交付验证的全链路。
 
-## 架构总览
+## 架构总览（项目级部署）
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                     运行时人格层                          │
-│  Hermes_主人格.md ──→ 部署为 ~/.hermes/SOUL.md（人格）     │
-│  Hermes_制度层.md  ──→ 部署为 ~/.hermes/AGENTS.md（规则）  │
-└──────────────┬──────────────────────────────────────────┘
-               │ 按需引用
-┌──────────────┴──────────┬────────────────┬──────────────┐
-│       Hermes模板库      │    通用角色库    │    skills    │
-│  PRD/HLD/DD/任务卡/    │  16 个跨项目     │  project-    │
-│  会议纪要/进度报告/     │  通用角色 .md    │  workflow /  │
-│  交付验证/看板/HANDOFF  │  ──→ 部署到     │  agent-bridge│
-│  /编码规范_跨语言.md    │  ~/.claude/     │  /cross-     │
-│       （按环节取用）    │  agents/*.md    │  language …  │
-└────────────────────────┴────────────────┴──────┬───────┘
-                                                   │ 调用
-                                          ┌────────┴────────┐
-                                          │     scripts      │
-                                          │ agent-bridge.sh  │
-                                          │ pipeline.py …    │
-                                          └─────────────────┘
+<项目根>/
+├── AGENTS.md                    ← 项目技术地图 + §7 工作流入口（引用 .hermes/）
+└── .hermes/
+    ├── Hermes制度层.md          ← 制度层：人格内核 + 七阶段流程 + 委派规范 + 军规
+    ├── Hermes模板库/            ← 01-10 文档模板 + 编码规范_跨语言.md
+    ├── skills/                  ← project-workflow / kanban-executor / codegraph-review / agent-bridge / autonomous-delivery / cross-language
+    ├── config/                  ← projects.yaml / languages.yaml / stale-patterns.txt
+    ├── scripts/                 ← agent-bridge.sh / pipeline.py / check-references.py 等
+    ├── 通用角色库/              ← 16 个跨项目通用角色 .md
+    ├── 通用角色库说明.md
+    └── CHANGELOG.md / USAGE.md
 ```
+
+> 所有工作流资产部署进项目 `.hermes/`，加载项目后生效；套件自身元文档（README/DEPLOY/LICENSE/tests）不进项目。
+
+## 项目级部署映射（套件 → 项目）
+
+| 套件内容 | 项目位置 | 加载方式 |
+|----------|----------|----------|
+| `Hermes_制度层.md` | `.hermes/Hermes制度层.md`（去下划线） | 项目根 AGENTS.md §7 入口引用（自动注入） |
+| `Hermes模板库/` | `.hermes/Hermes模板库/` | 按需引用 |
+| `skills/` | `.hermes/skills/` | 自动注册（Hermes 项目级技能目录） |
+| `config/` | `.hermes/config/` | 按需加载 |
+| `scripts/` | `.hermes/scripts/` | 按需调用 |
+| `通用角色库/` + `通用角色库说明.md` | `.hermes/通用角色库/` + `.hermes/通用角色库说明.md` | 委派引用 |
+| `CHANGELOG.md` / `USAGE.md` | `.hermes/` | 存档 / 引用 |
+
+> 与 GitHub 不一致的两点：① `Hermes_制度层.md` 部署时去掉下划线（项目已用 `Hermes制度层.md` 命名，AGENTS.md §7 引用无下划线版）；② 套件自身元文档（README/DEPLOY/LICENSE/tests/.git*）不部署进项目。
 
 ## 快速开始
 
 ```bash
-# 1. 部署人格、角色库与脚本（含两个 Hermes home 的说明）
+# 1. 部署套件到项目 .hermes/（映射见上表）
 #    详见 DEPLOY.md
 
 # 2. 验证
-bash ~/.hermes/scripts/agent-bridge.sh roles   # 列出角色（动态扫描）
+bash .hermes/scripts/agent-bridge.sh roles   # 列出角色（动态扫描）
 
 # 3. 使用（三种模式：轻量 / 严谨 / 自动）
 #    详见 USAGE.md
@@ -47,11 +54,10 @@ bash tests/run_tests.sh
 
 | 路径 | 内容 | 事实源职责 |
 |------|------|-----------|
-| `Hermes_主人格.md` | 人格：价值观、沟通风格 | 人格唯一源 |
-| `Hermes_制度层.md` | 制度：七阶段流程、委派规范、军规 | 流程与协议唯一源 |
+| `Hermes_制度层.md` | 制度层：人格内核（价值观/沟通纪律/边界红线/铁律）+ 七阶段流程 + 委派规范 + 军规 | 人格内核、流程与协议唯一源 |
 | `Hermes模板库/` | 01-10 文档模板 + 编码规范_跨语言.md | 编码规范唯一源 |
 | `通用角色库/` + `通用角色库说明.md` | 16 角色定义与清单 | **角色清单唯一源**（agent-bridge.sh 动态扫描自动同步） |
-| `skills/` | project-workflow / agent-bridge / autonomous-delivery / cross-language 等 | 技能入口 |
+| `skills/` | project-workflow / kanban-executor / codegraph-review / agent-bridge / autonomous-delivery / cross-language | 技能入口 |
 | `scripts/` | agent-bridge.sh / pipeline.py / check-references.py 等 | 可执行工具 |
 | `config/` | projects.yaml / languages.yaml / stale-patterns.txt | **项目注册表与语言清单唯一源** |
 | `tests/` | 最小测试集（run_tests.sh + test_pipeline.py） | 回归防线 |
@@ -63,6 +69,7 @@ bash tests/run_tests.sh
 
 | 信息 | 唯一源 | 其他位置 |
 |------|--------|---------|
+| 人格内核 / 行为准则 | `Hermes_制度层.md` §九 | 原 `Hermes_主人格.md` 已合并进制度层 |
 | 委派规范 / 失败兜底 | `Hermes_制度层.md` §六 | SKILL.md 引用 |
 | 角色清单 | `通用角色库说明.md` §二 + 角色 .md | agent-bridge.sh 运行时扫描 |
 | 编码规范（跨语言） | `Hermes模板库/编码规范_跨语言.md` | 角色文件引用 |

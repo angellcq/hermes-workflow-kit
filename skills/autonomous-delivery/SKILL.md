@@ -18,7 +18,7 @@ platforms: [windows, linux, macos]
 
 ```bash
 # 单条命令端到端跑通
-python ~/.hermes/scripts/pipeline.py \
+python .hermes/scripts/pipeline.py \
   --project my-app \
   --task "实现用户登录接口" \
   --lang python
@@ -230,7 +230,7 @@ PROJECTS = {
 
 **处理**：
 1. 把 worktree 改动合并回主分支（用户确认后）
-2. 更新 `~/.hermes/Hermes模板库/10_版本记录模板.md`（追加本次变更）
+2. 更新 `.hermes/Hermes模板库/10_版本记录模板.md`（追加本次变更）
 3. 清理 worktree
 4. 输出最终交付报告
 
@@ -270,7 +270,7 @@ git add -A && git commit -m "fix: 手动修复登录逻辑"
 ### 模式 1：完全自动（推荐需求清晰时）
 
 ```bash
-python ~/.hermes/scripts/pipeline.py --project my-app --task "..."
+python .hermes/scripts/pipeline.py --project my-app --task "..."
 # 跑完全部 6 阶段，失败自动修复 2 轮
 ```
 
