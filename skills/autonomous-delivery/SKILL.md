@@ -48,23 +48,26 @@ python .hermes/scripts/pipeline.py \
 
 ---
 
-## 项目配置（pipeline.py 顶部 PROJECTS 段）
+## 项目配置（`config/projects.yaml`，非脚本内）
 
-```python
-PROJECTS = {
-    "my-app": {
-        "path": r"D:\projects\my-app",
-        "lang": "python",
-        "frontend_url": "http://localhost:3000",
-        "backend_base": "http://localhost:8080",
-        "claude_workdir": r"D:\projects\my-app",
-        "skip_e2e": False,         # 是否跳过 04 页面联调
-        "test_cmd": "pytest",      # 单元测试命令
-        "api_test_cmd": "pytest tests/api",  # 接口测试命令
-        "build_cmd": "make build", # 编译/构建命令
-    },
-}
+> v4.4 起 `pipeline.py` 不再内置 `PROJECTS` 字典：项目注册表外置为
+> **`config/projects.yaml`（唯一事实源）**，由 `load_projects()` 纯函数加载。
+> 字段说明与模板见该文件头部注释。
+
+```yaml
+# config/projects.yaml
+my-app:
+  path: "D:\\projects\\my-app"
+  workdir: "D:\\projects\\my-app"
+  lang: python
+  test_cmd: "pytest"
+  api_test_cmd: "pytest tests/api"
+  build_cmd: "make build"
+  skip_e2e: false
 ```
+
+加载顺序：`--projects-config` 显式指定 → 环境变量 `HERMES_PROJECTS_YAML` →
+`~/.hermes/config/projects.yaml` → 仓库内置示例。
 
 ---
 
@@ -260,7 +263,8 @@ cd /tmp/pipeline-my-app-1234
 # 手动修改文件
 git add -A && git commit -m "fix: 手动修复登录逻辑"
 
-# 验证：hermes pipeline resume my-app --from-stage 03
+# 续跑：pipeline 无 resume 子命令，用 --from-stage 从指定阶段重跑
+python .hermes/scripts/pipeline.py --project my-app --task "..." --from-stage 03-api-test
 ```
 
 ---

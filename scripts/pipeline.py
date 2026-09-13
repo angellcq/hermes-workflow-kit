@@ -65,6 +65,9 @@ REPORT_BASE = Path.home() / ".workbuddy" / "pipeline-reports"
 MAX_RETRIES = 2
 RETRY_INTERVAL_SEC = 5
 FIX_MAX_ROUNDS = 2
+# 注意（批次 B 起）：这里的重试只覆盖 pipeline **自身阶段**的重跑。
+# worker（编码代理）侧的连续失败熔断由平台看板控制（--max-retries / dispatcher
+# failure_limit 默认 2；--max-runtime 超时重排队），本脚本不得再叠加计数。
 DEFAULT_MAX_TURNS_CODE = 15
 DEFAULT_MAX_TURNS_FIX = 10
 DEFAULT_ROLE_CODE = "backend-developer"

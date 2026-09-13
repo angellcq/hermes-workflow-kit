@@ -49,9 +49,12 @@ S0 需求受理 → S1 需求澄清 → S2 PRD编写 → S3 HLD/DD设计
 - 先读 `04_任务卡模板.md`
 - 拆解五原则：可验收 / 低耦合 / 单事务(≤4h) / 显式依赖 / 有回溯
 - **顺序硬约束**（详见 `kanban-executor` §0，命令照抄其模板）：
-  `hermes kanban create` 上板 → 自验 `hermes kanban list` 含本卡 id → 写 TASK.md → 认领派发。
+  ① `preflight.sh`（环境 + 调度器存活）→ ② `scope-check.py`（files_scope 两两互斥）
+  → ③ `kanban-dispatch.py` 建原生卡（语义指纹作 `--idempotency-key`）→ ④ 收口回板。
   **禁止**先写 TASK.md 或先建 worktree 再"回头补卡"；TASK.md 的"当前状态"仅是缓存，看板才是事实源
-- 派发策略：独立并行 / 依赖串行 / 同文件强制串行
+- 派发策略：独立并行 / 依赖串行 / 同文件强制串行（同文件串行用 `hermes kanban link` 落成父子依赖，不靠口头约定）
+- **准入（硬闸门）**：preflight 为 NOT_READY 时禁止派发；DEGRADED（调度器未运行）时
+  **禁止并行派发**，降级为单 Agent 串行 + 人工对账并显式上报；scope-check 未过时禁止派发
 - **准出（硬闸门）**：本批每张卡都必须在回复中报告 `t_xxxxxxxx` 看板 id + 状态，且 `hermes kanban list`
   实测条数 = 卡片数。**缺任一 id 即 S4 未准出，不得进入 S5，不得声称"任务已创建到看板"**
 
@@ -64,6 +67,8 @@ S0 需求受理 → S1 需求澄清 → S2 PRD编写 → S3 HLD/DD设计
 - 需求覆盖：追踪矩阵每条需求 → ≥1 张 DONE 卡 → ≥1 通过验证项
 - 交付物完整：文档齐套 / 版本一致 / 变更闭合 / 异常清零
 - 编码交付：`git diff --stat` 确认变更 + 项目编译命令通过
+- **评审门（平台）**：卡走 `hermes kanban request_review` → 评审（可 `review_dispatch` 派 sdlc-review）→ 通过才 `complete`；
+  建卡时给了 `--completion-contract` 的卡，由平台校验 PR/CI 门全绿才允许标记完成——**「完成」不得以自述为准**
 
 ### S7 归档交付
 - `hermes kanban archive` 归档全部卡片

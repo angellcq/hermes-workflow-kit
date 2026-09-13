@@ -1,4 +1,6 @@
-# Hermes 主工作流与协作规则（融合版 v5.0 · 跨项目无特定语言）
+# Hermes 主工作流与协作规则（跨项目无特定语言）
+
+<!-- 版本记录唯一源：仓库 CHANGELOG.md（本文件不再内嵌版本号，避免口径漂移） -->
 
 <!-- 部署说明：本文件部署到项目 .hermes/Hermes制度层.md，经项目根 AGENTS.md 入口引用 -->
 
@@ -94,13 +96,31 @@
 
 ## 三、进度跟踪与验证
 
-- 任务状态机：`TODO → IN_PROGRESS → IN_REVIEW → DONE / BLOCKED`，仅允许合法流转
+- 任务状态机：**以平台状态集为唯一枚举**（`triage → todo → ready → running → blocked / review → done → archived`），
+  仅允许合法流转；套件文档、任务卡、看板卡片一律照抄这八个状态，不得自定义别名（历史文档里的
+  `IN_PROGRESS`/`IN_REVIEW` 已废弃：前者即 `running`，后者即 `review`）
+- **心跳纪律**：由平台 worker 执行的任务必须每小时 `kanban_heartbeat`；平台规则是「running 超过 4 小时
+  且 1 小时内无心跳 → 回收重排（不计失败）」，无心跳的长任务会被静默回收并重派
+- **重试与熔断归平台**：人工修复闭环套件只规定"第 2 轮未闭合即上浮协商"（军规 8），
+  worker 侧的连续失败熔断由平台控制（`--max-retries` / `failure_limit` 默认 2；`--max-runtime` 超时
+  SIGTERM 后重排队），套件不得再叠加自造重试计数
 - 检查频率：**检查点驱动**——派发确认时、里程碑完成时、用户询问时、出现阻塞时各核对一次；有定时需求时用框架定时任务（cron），不依赖对话自觉
 - 预警规则：进度 < 预期 70% 黄色预警（询问阻塞原因）；< 50% 红色预警（上报并启动应急）；关键路径延期立即重新排期并通知相关方
 - BLOCKED 超过一个检查周期未解，升级为协商议题
-- 最终验证双维度：**需求覆盖**（追踪矩阵每条需求 → 至少一张 DONE 任务卡 → 至少一个通过的验证项）+ **交付物完整**（文档齐套、版本号一致、变更闭合、异常清零）
+- 最终验证双维度：**需求覆盖**（追踪矩阵每条需求 → 至少一张 DONE 任务卡 → 至少一个通过的验证项）+ **交付物完整**（文档齐套、版本号一致、变更闭合、异常清零）；**「完成」以平台评审门与 PR/CI 门为准**（`request_review` + `--completion-contract`），不以自述为准
 - 记忆纪律：重要决策、架构选型、里程碑 → 写入记忆；用户要求记住 → 立即记忆；跨会话先检索再行动
 - 看板纪律：以框架内置 `hermes kanban` 为事实源，状态变更立即同步；聊天口头进度仅为输入信号，须核实后落板
+- **派发前双闸门（S4 准入，v4.4.2）**：`bash .hermes/scripts/preflight.sh`（环境 + **调度器存活**）
+  + `python .hermes/scripts/scope-check.py --tasks <tasks.yaml>`（**文件边界互斥**）。
+  preflight 判 DEGRADED（dispatcher 未运行）时**禁止并行派发**，降级为单 Agent 串行 + 人工对账并显式上报；
+  scope-check 未过（存在重叠或缺 `files_scope`）时**禁止派发**，改串行或重划边界
+- **幂等键纪律**：建卡 `--idempotency-key` 一律填**语义指纹**（`scope-check.py --json` 的 `fingerprints`），
+  不得用人工命名；指纹相同即语义重复子任务——**合并为一张卡**，不得重复派发/重复执行
+- **归档纪律**：卡到终态（`done` / `blocked`）后才 `hermes kanban archive`；归档期不得再触发重试或重派；
+  事件与日志保留用 `hermes kanban gc --event-retention-days N`（默认 30 天），不另建历史表
+- **监控纪律**：用平台数据源，不自建监控表——积压与吞吐看 `hermes kanban stats --json`，
+  事件流看 `hermes kanban watch --kinds completed,blocked,gave_up,crashed,timed_out`，
+  通知用 `kanban notify-subscribe`；**调度器可用性由 `preflight.sh` 每次派发前检查**
 
 ---
 
@@ -145,19 +165,28 @@
 
 ---
 
-## 六、编码委派规范（融合版 · 跨平台）
+## 六、编码委派规范（跨项目 · 跨平台）
 
 > 本机为 Windows + git-bash，**没有 tmux**。交互监控一律用 Hermes 的 `terminal(background+pty)` + `process` + `read_terminal`。
 
-### 6.1 三种委派姿势（按任务选型）
+### 6.0 默认执行体：平台原生 worker（路线 A）
+
+**默认**：把任务做成看板卡，交给平台 dispatcher 派生 **原生 worker**（`hermes -p <profile>` 进程）执行。
+原生 worker 自带心跳、崩溃回收、评审门、模型/技能按卡注入与持久审计，是唯一"有平台兜底"的路径。
+
+**外部 CLI（`claude -p` / `codex`）是可选后端**，仅在以下场景使用：
+需要跨模型对比验证、需要 Codex 的特定能力、或该任务必须由外部 CLI 的交互模式完成。
+用外部 CLI 时必须自己补上平台白送的东西：产物落盘位置、失败判定、状态回写看板。
+
+### 6.1 三种姿势（按任务选型）
 
 | 姿势 | 适用 | 入口 |
 |------|------|------|
-| **Print 模式** | 大多数单任务，干净、结构化 | `claude -p` |
-| **agent-bridge 后台并行** | 多任务不共写文件 | `bash scripts/agent-bridge.sh` |
-| **pipeline 自动跑** | 端到端可全自动交付 | `python scripts/pipeline.py` |
+| **平台原生 worker**（默认） | 常规交付任务、需并行/可恢复/要审计 | `scripts/kanban-dispatch.py` → dispatcher 派生 worker |
+| **外部 CLI Print 模式**（可选后端） | 单任务、要跨模型对比、不进看板的一次性改动 | `claude -p "读 TASK.md 并执行"` |
+| **pipeline 端到端**（可选） | 需求清晰、要 6 阶段全自动跑通 | `python scripts/pipeline.py` |
 
-### 6.2 Print 模式（首选）
+### 6.2 外部 CLI Print 模式（可选后端）
 
 ```bash
 claude -p "按 DD 文档实现用户登录 API，包含错误处理" \
@@ -172,13 +201,18 @@ claude -p "按 DD 文档实现用户登录 API，包含错误处理" \
 - `--continue` / `--resume <id>` 续接会话
 - 长任务用 `terminal(background=true, notify=true)` 起，结束后核对退出码
 
-### 6.3 agent-bridge 后台并行（多任务）
+### 6.3 agent-bridge 后台并行（多任务 → 原生看板卡）
 
 ```bash
 bash .hermes/scripts/agent-bridge.sh roles                                # 列出可用角色
-bash .hermes/scripts/agent-bridge.sh claude backend-developer "任务1"    # 单任务
-bash .hermes/scripts/agent-bridge.sh parallel --tasks tasks.yaml         # 并行编排
+bash .hermes/scripts/agent-bridge.sh claude backend-developer "任务1"    # 单任务（外部 CLI 后端，可选）
+bash .hermes/scripts/agent-bridge.sh parallel --tasks tasks.yaml --dry-run  # 预览建卡命令
+bash .hermes/scripts/agent-bridge.sh parallel --tasks tasks.yaml         # 三道闸门 → 建原生卡
 ```
+
+**路线 A（默认）**：批量并行不走"套件自己 fork `claude -p` + 维护 active.json"，而是
+经 `preflight（环境）→ scope-check（边界互斥）→ 语义指纹幂等` 三道闸门后建**原生看板卡**，
+由平台 dispatcher 派生 worker 执行。派发前闸门与降级规则见 §三。
 
 详见 `skills/agent-bridge/SKILL.md`。
 
@@ -195,10 +229,15 @@ python .hermes/scripts/pipeline.py \
 
 ### 6.5 任务传递姿势（防空任务，关键）
 
-任务内容必须落盘到 worktree 内的 `TASK.md`，启动指令只写"读 TASK.md 并执行"（≤4KB）。以下三种写法会把任务吞掉、导致 Claude Code 收到空任务零产出，**禁止**：
+任务内容必须落盘到 **worktree/dir 工作区内的 `TASK.md`**，启动指令只写"读 TASK.md 并执行"（≤4KB）。以下三种写法会把任务吞掉、导致编码代理收到空任务零产出，**禁止**：
 - `$(cat 全文件)` —— 把整份需求 cat 进命令行，shell 解析时内容丢失
 - `--system` flag —— Claude Code 不支持，静默忽略
 - `>4KB` 内联长指令 —— 内联 prompt 超长被截断
+
+> **工作区陷阱（平台行为）**：看板卡默认工作区是 `scratch`（**完成即删**）；把 TASK.md 放进去，
+> 卡一完成文件就没了。因此代码交付任务必须用 `--workspace worktree`（或给看板设 `default-workdir`），
+> 或把 TASK.md 声明为交付物（`kanban_complete(artifacts=[...])`）。跨 Agent 交接以**卡评论**为准
+> （`kanban_comment`：重派后 worker 会读全线程），TASK.md 只是本地工作稿。
 
 ### 6.6 Interactive 模式（多轮迭代）
 

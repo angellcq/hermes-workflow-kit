@@ -61,17 +61,24 @@ python .hermes/scripts/pipeline.py \
 
 详见 `Hermes模板库/编码规范_跨语言.md` 与 `skills/cross-language/SKILL.md`。
 
-## 五、编码委派（融合版）
+## 五、编码委派（路线 A）
 
-**三种姿势，按任务选型**：
+**默认姿势**：任务 → 看板卡 → 平台 dispatcher 派生**原生 worker**（带心跳/回收/评审门/持久审计）。
+
+```bash
+# 三闸门 + 语义指纹幂等 → 建原生卡（详见 skills/kanban-executor §0）
+python .hermes/scripts/kanban-dispatch.py --tasks tasks.yaml --assignee <profile> --workspace worktree
+```
+
+**可选后端**（按需，非默认）：
 
 | 姿势 | 适用 | 命令 |
 |------|------|------|
-| **Print 模式**（首选） | 大多数单任务 | `claude -p "读 TASK.md 并执行" --max-turns 10` |
-| **agent-bridge 后台并行** | 多任务不共写文件 | `bash agent-bridge.sh claude backend-developer "..."` |
-| **pipeline 自动跑** | 端到端交付 | `python pipeline.py --project X --task "..."` |
+| 外部 CLI Print 模式 | 单任务、跨模型对比 | `claude -p "读 TASK.md 并执行" --max-turns 10` |
+| agent-bridge 单任务 | 角色扮演调外部 CLI | `bash agent-bridge.sh claude <role> "<task>"` |
+| pipeline 端到端 | 需求清晰、6 阶段全自动 | `python pipeline.py --project X --task "..."` |
 
-**委派纪律**：详见 `AGENTS.md §六.5` 与 `§六.7`。本文件不重复通用规则——核心：
+**委派纪律**：详见《Hermes 制度层》§六。核心：
 
 1. 任务内容必须落盘到 `TASK.md`，启动指令 ≤4KB（"读 TASK.md 并执行"）
 2. 禁止：`$(cat 全文件)` / `--system` flag / `>4KB` 内联长指令

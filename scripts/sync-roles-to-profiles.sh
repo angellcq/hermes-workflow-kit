@@ -17,7 +17,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_AGENTS_DIR="${CLAUDE_AGENTS_DIR:-$(dirname "$SCRIPT_DIR")/通用角色库}"
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
-DEFAULT_MODEL="${DEFAULT_MODEL:-sonnet}"
+DEFAULT_MODEL="${DEFAULT_MODEL:-}"
+DEFAULT_PROVIDER="${DEFAULT_PROVIDER:-}"
 DRY_RUN=false
 LIMIT=0
 
@@ -90,8 +91,9 @@ for role_file in "${role_files[@]}"; do
     continue
   fi
 
-  # 检查 profile 是否已存在
-  if hermes profile list 2>/dev/null | grep -q "^$role_name$"; then
+  # 检查 profile 是否已存在：`hermes profile list` 输出是表格（首列带 ◆ 标记与空格），
+  # 用 "^$role_name$" 永远不匹配 → 会重复创建。改为取首列去标记后精确比较。
+  if hermes profile list 2>/dev/null | awk '{print $1}' | sed 's/^◆//' | grep -qx "$role_name"; then
     log "跳过（已存在）：$role_name"
     continue
   fi
@@ -109,12 +111,17 @@ for role_file in "${role_files[@]}"; do
   mkdir -p "$profile_dir"
   cp "$role_file" "$profile_dir/AGENT.md"
 
-  # 写 config.yaml（默认 sonnet 模型）
-  cat > "$profile_dir/config.yaml" <<EOF
-model:
-  default: $DEFAULT_MODEL
-  provider: anthropic
-EOF
+  # 写 config.yaml：仅在显式指定模型时才写（留空 = 继承全局配置，避免把套件绑死在
+  # 某个供应商上——历史版本写死 provider: anthropic + sonnet，在别的后端上不可用）
+  if [[ -n "$DEFAULT_MODEL" ]]; then
+    {
+      echo "model:"
+      echo "  default: $DEFAULT_MODEL"
+      if [[ -n "$DEFAULT_PROVIDER" ]]; then
+        echo "  provider: $DEFAULT_PROVIDER"
+      fi
+    } > "$profile_dir/config.yaml"
+  fi
 
 done
 

@@ -7,8 +7,8 @@
 套件内容只进目标项目根目录的 `.hermes/`，**不部署到 Hermes 全局 home**。打开该项目、加载 `.hermes/` 后工作流才生效。
 
 设：
-- `SRC` = 套件本地缓存（`F:\Gitee.com\hermes-workflow-kit`，GitHub `git@github.com:angellcq/hermes-workflow-kit.git` 的克隆）
-- `PROJ` = 目标项目根（如 `F:\Gitee.com\jt-dream-database`）
+- `SRC` = 套件本地缓存（本机为 `D:\Gitee.com\hermes-workflow-kit`，GitHub `git@github.com:angellcq/hermes-workflow-kit.git` 的克隆；**盘符按实际克隆位置填**）
+- `PROJ` = 目标项目根（AGENTS.md 所在目录，如 `D:\Gitee.com\jt-dream-database`）
 
 ## 二、部署映射
 
@@ -89,7 +89,9 @@ PROJ/
     ├── Hermes模板库/            ← 01-10 文档模板 + 编码规范_跨语言.md
     ├── skills/                  ← project-workflow / kanban-executor / codegraph-review / agent-bridge / autonomous-delivery / cross-language
     ├── config/                  ← projects.yaml / languages.yaml / stale-patterns.txt
-    ├── scripts/                 ← agent-bridge.sh / pipeline.py / check-references.py 等
+    ├── scripts/                 ← agent-bridge.sh / pipeline.py / check-references.py /
+    │                               scope-check.py（S4 边界互斥）/ kanban-dispatch.py（任务→原生卡）/
+    │                               preflight.sh（调度存活闸门）/ cross-language.sh 等
     ├── 通用角色库/              ← 16 个跨项目通用角色 .md
     ├── 通用角色库说明.md
     ├── CHANGELOG.md

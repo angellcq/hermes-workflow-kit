@@ -9,6 +9,12 @@ platforms: [windows, linux, macos]
 
 统一封装多 Agent 调用，把"角色库 → Claude/Codex 调用 → 后台并行 → 监控回收"封装为一套脚本与约定。
 
+> **路线 A（v4.4.2 起）**：常规交付任务**默认走平台原生 worker**（看板卡 → dispatcher 派生 `hermes -p <profile>`），
+> 不再默认 fork 外部 CLI。本技能现在的定位是：
+> - `parallel` 子命令 = 任务文件 → **原生看板卡**（`scripts/kanban-dispatch.py`，三闸门 + 语义指纹幂等）
+> - `claude` / `claude-bg` / `codex` = **可选后端**，仅在跨模型对比、需要 Codex 特定能力时使用
+> 原生路径带心跳、崩溃回收、评审门与持久审计；外部 CLI 路径没有，用就得自己补状态回写。
+
 > 适用场景：需要调用外部 AI CLI（Claude Code / Codex）执行编码任务；多任务并行不共写文件；用角色库切换 Agent 身份。
 > 不适用场景：单任务用 Print 模式即可（直接 `claude -p`）；端到端跑通用 pipeline（用 autonomous-delivery）。
 
@@ -118,8 +124,19 @@ bash agent-bridge.sh monitor --task-id t-001
 ### 模式 3：批量并行（多任务不共写文件）
 
 ```bash
+# 预览（只打印将执行的建卡命令，不落板）
+bash agent-bridge.sh parallel --tasks tasks.yaml --dry-run
+
+# 真派发：三道闸门全过才建卡（交给平台 dispatcher 执行）
 bash agent-bridge.sh parallel --tasks tasks.yaml
 ```
+
+> **实现说明（v4.4.2 起）**：`parallel` 不再由套件自己 fork `claude -p` 并维护
+> `active.json`，而是转成**平台原生看板卡**（`scripts/kanban-dispatch.py`）。
+> 三道闸门顺序执行，任一不过即拒发：
+> 1. **环境闸门** `scripts/preflight.sh` —— hermes CLI / 看板可读写 / **dispatcher 是否存活** / python / 角色库；调度器未运行 → DEGRADED，只允许串行 + 人工对账
+> 2. **边界闸门** `scripts/scope-check.py` —— 并行任务 `files_scope` 两两互斥校验，重叠或缺边界即拒发
+> 3. **幂等闸门** —— `--idempotency-key` 用**语义指纹** `sha256(目标+边界+验收)`；平台语义是「同 key 的非归档卡已存在 → 返回既有卡 id，不新建」，因此重复子任务与重跑都不会双跑
 
 **tasks.yaml 格式**：
 
@@ -152,13 +169,13 @@ tasks:
     max_turns: 8
 ```
 
-**执行规则**：
-1. 校验所有任务 files_scope **互不重叠**（重叠则报错退出）
-2. 并行启动（Hermes `delegate_task` 多任务 或多个 `terminal(background=true)`）
-3. 每个任务单独 worktree
-4. 监控每个任务状态
-5. 所有任务完成后 Fan-In 汇总
-6. 任何一个任务失败 → 整体报告失败，用户决定是否回滚
+**执行规则（v4.4.2 实测行为）**：
+1. **环境闸门**：`preflight.sh`；DEGRADED（调度器未运行）时仍可建卡，但必须按制度层降级为串行 + 人工对账
+2. **边界闸门**：`scope-check.py` 校验所有任务 `files_scope` 两两互斥，**重叠或缺边界即整体退出（退出码 1），不建任何卡**（部分建卡会造成半派发状态）
+3. **幂等闸门**：每卡用语义指纹作 `--idempotency-key`，重跑/补账返回既有卡 id，不产生重复卡（实测：同指纹派发两次 → 同一 `t_xxxxxxxx`，板上仍 1 条）
+4. **建卡即交付执行权**：卡默认 `ready`；不给 `--assignee` 时留在板上等人工/对账认领，给了 `--assignee <profile>` 则由平台 dispatcher 派生原生 worker 执行
+5. **产物位置**：代码交付任务显式传 `--workspace worktree`（或给看板设 `default-workdir`）；平台默认 `scratch` 工作区**完成即删**，产物会丢
+6. **执行后核对**：不依赖 stdout 自述，用 `hermes kanban list --json` / `kanban show <id>` 核对状态与证据
 
 ---
 

@@ -4,6 +4,90 @@
 
 ---
 
+## v4.6.0（2026-09-13）— 路线 A 批次 C：执行体切原生 worker + 角色/模型策略 + 归档监控
+
+批次 C 目标：把**默认执行体**从外部 CLI 换成平台原生 worker，修正角色→profile 的过时策略，
+并把归档/保留/监控收口到平台能力。本批次完成后，套件只保留平台不具备的三件事：
+**流程纪律 + 文档骨架 + 语义去重与边界校验**。
+
+| # | 改动 | 落点 |
+|---|------|------|
+| 1 | **默认执行体切原生 worker**：新增 §6.0 明确「平台原生 worker 为默认，外部 CLI（`claude -p`/`codex`）为可选后端」；§6.1 姿势表重排；§6.2 改标题为「外部 CLI Print 模式（可选后端）」 | `Hermes_制度层.md` §六 |
+| 2 | `USAGE.md` §五 同步：默认 = `kanban-dispatch` 建卡 → dispatcher 派生 worker；外部 CLI 与 pipeline 降为"可选后端" | `USAGE.md` |
+| 3 | `agent-bridge` 技能定位声明：`parallel` = 原生看板卡路径；`claude/claude-bg/codex` = 可选后端（无心跳/无回收/无审计，用则自补状态回写） | `skills/agent-bridge/SKILL.md` |
+| 4 | **角色→profile 策略修正（两个真 bug）**：① profile 存在性判断用 `grep -qx` 匹配表格首列（原 `^name$` 永不匹配 → 重复创建）；② 删除写死的 `provider: anthropic` + `sonnet`，改为 `DEFAULT_MODEL`/`DEFAULT_PROVIDER` 传入，留空则**继承全局配置**（原写法在本机 provider=custom/deepseek 下生成不可用 profile） | `scripts/sync-roles-to-profiles.sh` |
+| 5 | **归档/保留/监控收口平台**：制度层 §三 新增归档纪律（先终态再 archive、归档期禁止重试）与监控纪律（`stats`/`watch`/`notify-subscribe`，不另建监控表）；`kanban-executor` 新增 §5 归档保留与监控对照表（重复执行、调度可用性、状态冲突、卡滞积压） | `Hermes_制度层.md`、`skills/kanban-executor/SKILL.md` |
+| 6 | 重试归属注释：`pipeline.py` 常量区注明"这里的重试只覆盖 pipeline 自身阶段，worker 侧熔断归平台" | `scripts/pipeline.py` |
+
+### 路线 A 完成后的定位（三层收口）
+
+| 层 | 归属 | 内容 |
+|---|---|---|
+| 执行 / 调度 / 状态 / 重试 / 评审 / 归档 / 监控 | **Hermes 平台** | 看板、dispatcher、worker、断路器、review 门、`gc`/`stats`/`watch` |
+| 流程纪律 | 套件 | 七阶段准入准出、Tier 分级、协商触发、三态汇报、军规 |
+| 平台没有的三件事 | 套件自研（**唯一该自研的部分**） | `scope-check.py`（文件边界互斥 + 语义指纹去重）、`preflight.sh`（调度存活闸门与降级）、文档骨架与引用校验 |
+
+### 测试
+
+- `tests/run_tests.sh`：12 段 31 项全通过
+- 单元测试：`test_pipeline.py` 29 + `test_scope_check.py` 29 + `test_kanban_dispatch.py` 9
+
+---
+
+## v4.5.0（2026-09-13）— 路线 A 批次 B：对齐平台（状态机 / 重试 / 评审门 / 心跳 / 交接）
+
+批次 B 目标：把套件自造的机制（状态枚举、重试计数、巡检周期、完成自述）**交还平台**，
+只保留平台没有的那部分（流程纪律、边界校验、语义去重、文档骨架）。
+
+| # | 改动 | 落点 |
+|---|------|------|
+| 1 | **状态机统一为平台八状态**（`triage/todo/ready/running/blocked/review/done/archived`），废弃 `IN_PROGRESS`/`IN_REVIEW` 别名（= `running`/`review`），卡片状态与看板不再漂移 | `Hermes_制度层.md` §三、模板 04/08、`kanban-executor` |
+| 2 | **心跳纪律入制度**：由平台 worker 执行的任务每小时 `kanban_heartbeat`；平台规则「running >4h 且 1h 无心跳 → 回收重排」写进任务卡要求，长任务不再被静默回收 | `Hermes_制度层.md` §三、`kanban-executor` §2 |
+| 3 | **重试/熔断交还平台**：套件只规定"人工修复闭环第 2 轮上浮协商"（军规 8），worker 侧连续失败由平台熔断（`--max-retries` / `failure_limit` 默认 2；`--max-runtime` 超时重排队）；`kanban-dispatch` 透传 `--max-retries / --max-runtime / --completion-contract / --skill`，套件不再叠加自造重试计数 | `Hermes_制度层.md` §三、`scripts/kanban-dispatch.py` |
+| 4 | **评审门替代自述式完成**：卡必须走 `request_review` → 评审（可 `review_dispatch` 派 sdlc-review）→ 通过才 `complete`；`--completion-contract`（OWNER/REPO / PR URL）把「完成」绑到 PR 与 CI 门 | `Hermes_制度层.md` §三、`project-workflow` S6、`kanban-executor` §4 |
+| 5 | **交接协议改卡评论**：跨 Agent 交接以 `kanban_comment`（重派后 worker 读全线程）+ `attach` 为准，TASK.md 降为本地工作稿；明确 **scratch 工作区完成即删** 的产物丢失陷阱（须 `worktree`/`dir:` 或声明 artifacts） | `Hermes_制度层.md` §6.5 |
+| 6 | **巡检/回收重写为平台事实**：原子认领、`reclaim`、bounded retry（默认 3）、熔断后处置流程；删除自造的「30 分钟巡检 / READY>24h 强派 / IN_PROGRESS>8h 回收」 | `kanban-executor` §1–§3 |
+| 7 | `slugify` 修复：fallback 也做规范化，避免大写/非法字符进入 worktree 分支名 | `scripts/kanban-dispatch.py` |
+
+### 测试
+
+- `tests/run_tests.sh`：**12 段 31 项全通过**（新增段：kanban-dispatch 建卡契约）
+- 新增 `tests/test_kanban_dispatch.py` 9 例（slug / 命令拼装 / 平台开关透传 / 三闸门与退出码）
+
+---
+
+## v4.4.2（2026-09-13）— 路线 A 批次 A：闸门落地 + 真 bug 修复 + 文档对齐
+
+背景：确定**路线 A**（拥抱 Hermes 原生能力，把执行/调度/状态交还平台），批次 A/B/C 依次执行。
+批次 A 目标：止血——把"文档承诺但不存在"的能力补成真的，把实测到的真 bug 修掉，把漂移的文档对齐。
+
+| # | 改动 | 落点 |
+|---|------|------|
+| 1 | 新增 **S4 文件边界互斥闸门** `scope-check.py`：三种输入（tasks.yaml / 04 任务卡 md / JSON）、保守重叠判定（同目录不同通配尾缀不算冲突，其余宁可误报）、缺 files_scope 即拒发、**语义指纹** `sha256(目标+边界+验收)` 输出 | `scripts/scope-check.py`（新） |
+| 2 | 新增 **派发前环境闸门** `preflight.sh`：hermes CLI / 看板可读写 / **调度器（dispatcher）存活** / python / 角色库 / scope-check 就绪；三态 READY/DEGRADED/NOT_READY + `--json` + `--require-dispatcher` | `scripts/preflight.sh`（新） |
+| 3 | 新增 `kanban-dispatch.py`：tasks.yaml → **原生看板卡**，三闸门串联（环境→边界→幂等），语义指纹作 `--idempotency-key`，输出每卡 `t_xxxxxxxx` 作为 S4 准出证据 | `scripts/kanban-dispatch.py`（新） |
+| 4 | **真 bug 修复**：`cmd_kill` 遇空/非数字 pid 时把 `""` 传给 `update_active`，jq `tonumber` / python `int("")` 抛错导致 active.json **静默不更新**（实测 Traceback + 状态丢失）→ pid 归一化 + python 侧容错 | `scripts/agent-bridge.sh` |
+| 5 | **测试假失败修复**：`cross-language list \| grep -q` 命中即关管道 → 上游吃 SIGPIPE → pipefail 下退出码 141，表现为"功能正常却报失败"。全部改 `grep ... >/dev/null`；段号改 `seg()` 动态生成，消灭手写分母漂移 | `tests/run_tests.sh` |
+| 6 | **消除"文档承诺 vs 实现"落差**：`parallel` 从占位实现（`warn 简化实现` + `return 1`）改为真路径（转发 `kanban-dispatch.py`，参数向后兼容并新增 `--dry-run/--json/--assignee/--workspace`）；SKILL 执行规则按实测行为重写 | `scripts/agent-bridge.sh`、`skills/agent-bridge/SKILL.md` |
+| 7 | **删除不实声明**：cron `kanban-board-watchdog`（从未落地）→ 改为 dispatcher 事实（跑在 gateway 里）+ preflight 检测 + 显式降级为串行+人工对账 | `skills/kanban-executor/SKILL.md` |
+| 8 | **角色库自定位修复**：`CLAUDE_AGENTS_DIR` 解析改为"存在的那个优先"（会话里导出的 `HERMES_HOME` 不再把自定位带偏）；`load_roles` 改惰性调用，无关子命令不再误告警「未发现任何角色」 | `scripts/agent-bridge.sh` |
+| 9 | **S4 闸门接线**：制度层 §三 新增"派发前双闸门 + 幂等键纪律"、§6.3 改为原生卡路径；`project-workflow` S4 补准入/准出闸门；`kanban-executor` §0 重写为"双闸门 + 幂等 + 准出证据" | `Hermes_制度层.md`、2 个 SKILL |
+| 10 | **文档漂移清理**：`PROJECTS` 硬编码段 → `config/projects.yaml`；`hermes pipeline resume`（不存在的子命令）→ `--from-stage`；`F:` 盘 → 实际路径；角色库说明删重复 §九 与失效 `ROLES` 数组引用；版本口径统一（制度层/模板索引去掉内嵌版本号，`CHANGELOG.md` 为唯一源） | `autonomous-delivery/SKILL.md`、`DEPLOY.md`、`通用角色库说明.md`、`Hermes_制度层.md`、`模板库/00` |
+| 11 | 文档补新脚本与闸门命令 | `README.md`、`DEPLOY.md` |
+
+### 测试与验证
+
+- `tests/run_tests.sh`：**11 段 26 项全通过**（新增：空 PID 回归、scope-check CLI 契约、preflight 契约）
+- 单元测试：`test_pipeline.py` 29 例 + `test_scope_check.py` 29 例全通过
+- **真实平台幂等验证**：临时板 `scope-smoke` 建卡 → 同指纹二次派发 → 返回**同一** `t_5e39a7cd`、板上仍 1 条 → 硬删临时板（默认板未受影响）
+
+### 兼容性
+
+- `agent-bridge.sh` 既有子命令与输出不变；`parallel` 参数向后兼容（新增可选参数）
+- pipeline 报告 JSON 格式不变；CLI 参数不变
+
+---
+
 ## v4.4.1（2026-09-09）— S4 看板硬闸门（修复"漏板"缺陷）
 
 背景：hljjt_hcgccloud 走工作流时 S4 只写 TASK.md + worktree 派发，从未执行 `hermes kanban create`，

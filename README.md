@@ -12,7 +12,7 @@ Hermes 多 Agent 开发工作流套件（**项目级部署**）：制度层（�
     ├── Hermes模板库/            ← 01-10 文档模板 + 编码规范_跨语言.md
     ├── skills/                  ← project-workflow / kanban-executor / codegraph-review / agent-bridge / autonomous-delivery / cross-language
     ├── config/                  ← projects.yaml / languages.yaml / stale-patterns.txt
-    ├── scripts/                 ← agent-bridge.sh / pipeline.py / check-references.py 等
+    ├── scripts/                 ← agent-bridge.sh / pipeline.py / check-references.py / scope-check.py / kanban-dispatch.py / preflight.sh
     ├── 通用角色库/              ← 16 个跨项目通用角色 .md
     ├── 通用角色库说明.md
     └── CHANGELOG.md / USAGE.md
@@ -40,13 +40,15 @@ Hermes 多 Agent 开发工作流套件（**项目级部署**）：制度层（�
 # 1. 部署套件到项目 .hermes/（映射见上表）
 #    详见 DEPLOY.md
 
-# 2. 验证
-bash .hermes/scripts/agent-bridge.sh roles   # 列出角色（动态扫描）
+# 2. 验证（三件：角色库 / 派发前闸门 / 全套测试）
+bash .hermes/scripts/agent-bridge.sh roles      # 列出角色（动态扫描）
+bash .hermes/scripts/preflight.sh               # 环境 + 调度器存活（DEGRADED 只能串行）
+python .hermes/scripts/scope-check.py --tasks tasks.yaml   # 并行任务的 files_scope 互斥校验
 
 # 3. 使用（三种模式：轻量 / 严谨 / 自动）
 #    详见 USAGE.md
 
-# 4. 运行测试集（脚本语法 / 角色加载 / pipeline 冒烟 / 引用完整性）
+# 4. 运行测试集（脚本语法 / 角色加载 / pipeline / 引用完整性 / 闸门契约）
 bash tests/run_tests.sh
 ```
 
@@ -58,7 +60,7 @@ bash tests/run_tests.sh
 | `Hermes模板库/` | 01-10 文档模板 + 编码规范_跨语言.md | 编码规范唯一源 |
 | `通用角色库/` + `通用角色库说明.md` | 16 角色定义与清单 | **角色清单唯一源**（agent-bridge.sh 动态扫描自动同步） |
 | `skills/` | project-workflow / kanban-executor / codegraph-review / agent-bridge / autonomous-delivery / cross-language | 技能入口 |
-| `scripts/` | agent-bridge.sh / pipeline.py / check-references.py 等 | 可执行工具 |
+| `scripts/` | agent-bridge.sh / pipeline.py / check-references.py / **scope-check.py（S4 边界互斥闸门）** / **kanban-dispatch.py（任务→原生卡）** / **preflight.sh（调度存活闸门）** 等 | 可执行工具 |
 | `config/` | projects.yaml / languages.yaml / stale-patterns.txt | **项目注册表与语言清单唯一源** |
 | `tests/` | 最小测试集（run_tests.sh + test_pipeline.py） | 回归防线 |
 | `DEPLOY.md` | 部署 SOP | — |

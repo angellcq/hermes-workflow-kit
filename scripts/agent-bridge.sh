@@ -7,7 +7,7 @@
 #   bash agent-bridge.sh claude <role> "<task>" [--workdir <dir>] [--max-turns N]
 #   bash agent-bridge.sh claude-bg <role> "<task>" --task-id <id> [--workdir <dir>]
 #   bash agent-bridge.sh codex <role> "<task>"
-#   bash agent-bridge.sh parallel --tasks tasks.yaml
+#   bash agent-bridge.sh parallel --tasks tasks.yaml [--dry-run]   # 转为原生看板卡
 #   bash agent-bridge.sh monitor --task-id <id>
 #   bash agent-bridge.sh list
 #   bash agent-bridge.sh kill --task-id <id>
@@ -21,7 +21,20 @@ set -euo pipefail
 # 自定位项目根：脚本部署在 <项目>/.hermes/scripts/，上级即 .hermes/ 根
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HERMES_HOME="${HERMES_HOME:-$(dirname "$SCRIPT_DIR")}"
-CLAUDE_AGENTS_DIR="${CLAUDE_AGENTS_DIR:-$HERMES_HOME/通用角色库}"
+
+# 角色库定位：CLAUDE_AGENTS_DIR 显式指定优先；否则**自定位优先于继承的 HERMES_HOME**。
+# 原因：Hermes CLI/Studio 会话里 HERMES_HOME 恒被导出（指向全局 home），若直接拿它
+# 拼路径会解析到全局角色库并报「未发现任何角色」——明明项目 .hermes/通用角色库 就在旁边。
+# 因此按「存在的那个」择优，两边都不存在时退回脚本同级目录（供告警复现）。
+if [[ -z "${CLAUDE_AGENTS_DIR:-}" ]]; then
+  for _cand in "$HERMES_HOME/通用角色库" "$(dirname "$SCRIPT_DIR")/通用角色库"; do
+    if [[ -d "$_cand" ]] && compgen -G "$_cand/*.md" >/dev/null 2>&1; then
+      CLAUDE_AGENTS_DIR="$_cand"
+      break
+    fi
+  done
+  CLAUDE_AGENTS_DIR="${CLAUDE_AGENTS_DIR:-$(dirname "$SCRIPT_DIR")/通用角色库}"
+fi
 TASK_BASE="${TASK_BASE:-$HOME/.workbuddy/agent-bridge/tasks}"
 FAILURES_LOG="${FAILURES_LOG:-$HOME/.workbuddy/agent-bridge/failures.log}"
 ACTIVE_FILE="${ACTIVE_FILE:-$HOME/.workbuddy/agent-bridge/active.json}"
@@ -122,6 +135,8 @@ release_lock() { rmdir "$1" 2>/dev/null || true; }
 # 唯一事实源 = 仓库 通用角色库/*.md（部署到 .hermes/通用角色库/）。
 # 新增角色只需：新增 .md → cp 到 .hermes/通用角色库/ → 无需改本脚本。
 load_roles() {
+  # 惰性调用（在 cmd_roles / check_role 内）：脚本被 source 或执行其它子命令时
+  # 不应因角色库解析结果而打印误导性告警
   ROLES=()
   ROLE_DESC=()
   local f name desc
@@ -142,7 +157,6 @@ load_roles() {
     warn "未在 $CLAUDE_AGENTS_DIR 发现任何角色 .md（先运行 sync-roles-to-profiles.sh 部署）"
   fi
 }
-load_roles
 
 cmd_roles() {
   local as_json=false
@@ -152,6 +166,8 @@ cmd_roles() {
       *) err "未知参数：$1"; return 1 ;;
     esac
   done
+
+  load_roles
 
   if $as_json; then
     local i
@@ -175,6 +191,7 @@ cmd_roles() {
 # 检查角色是否存在
 check_role() {
   local role="$1"
+  load_roles
   if [[ ! " ${ROLES[*]} " =~ " $role " ]]; then
     err "未知角色：$role"
     err "可用角色：bash agent-bridge.sh roles"
@@ -369,6 +386,10 @@ update_active() {
 _update_active_locked() {
   local task_id="$1" role="$2" pid="$3" status="$4"
 
+  # pid 只接受纯数字；空/非法一律归零。否则 jq 的 tonumber / python 的 int("") 会抛错，
+  # 导致 active.json 静默不更新（实测：kill 空 pid 任务时状态直接丢失）
+  [[ "$pid" =~ ^[0-9]+$ ]] || pid=0
+
   if [[ -f "$ACTIVE_FILE" ]]; then
     local active
     active=$(cat "$ACTIVE_FILE")
@@ -403,7 +424,9 @@ except Exception:
 data.setdefault("tasks", [])
 data["tasks"] = [t for t in data["tasks"] if t.get("task_id") != task_id]
 data["tasks"].append({
-    "task_id": task_id, "role": role, "pid": int(pid), "status": status,
+    "task_id": task_id, "role": role,
+    "pid": int(pid) if str(pid).strip().isdigit() else 0,
+    "status": status,
     "updated_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S%z"),
 })
 json.dump(data, sys.stdout, ensure_ascii=False, indent=2)
@@ -555,16 +578,24 @@ cmd_kill() {
     return 1
   fi
 
+  # 空/非数字 PID 是合法情况（进程已退出、登记失败）：只更新状态，绝不把 "" 传给
+  # update_active（会让 jq tonumber / python int() 抛错，导致 active.json 静默不更新）
   local pid
-  pid=$(cat "$task_dir/pid")
-  log "终止任务 $task_id (PID=$pid)"
+  pid=$(tr -dc '0-9' < "$task_dir/pid" 2>/dev/null || true)
 
-  if kill -0 "$pid" 2>/dev/null; then
-    kill "$pid"
-    sleep 2
+  if [[ -z "$pid" ]]; then
+    warn "任务 $task_id 无有效 PID（进程可能已退出），仅更新状态"
+  else
+    log "终止任务 $task_id (PID=$pid)"
     if kill -0 "$pid" 2>/dev/null; then
-      kill -9 "$pid"
-      warn "强制终止 PID=$pid"
+      kill "$pid"
+      sleep 2
+      if kill -0 "$pid" 2>/dev/null; then
+        kill -9 "$pid"
+        warn "强制终止 PID=$pid"
+      fi
+    else
+      log "PID=$pid 已不存在，仅更新状态"
     fi
   fi
 
@@ -585,40 +616,30 @@ EOF
 # ════════════════════════════════════════════════════════════════
 
 cmd_parallel() {
-  local tasks_file=""
-
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --tasks) tasks_file="$2"; shift 2 ;;
-      *) err "未知参数：$1"; return 1 ;;
-    esac
-  done
-
-  if [[ -z "$tasks_file" || ! -f "$tasks_file" ]]; then
-    err "必须指定有效的 --tasks <yaml 文件>"
+  # 路线 A：批量并行不再由本脚本自己 fork `claude -p` 并维护 active.json，
+  # 而是把一批任务转成**平台原生看板卡**，交 dispatcher 认领执行。
+  # 三道闸门在 kanban-dispatch.py 里：环境(preflight) → 边界互斥(scope-check)
+  # → 语义指纹幂等(--idempotency-key)。本函数只做入口转发，保持 CLI 兼容。
+  local py_bin=""
+  command -v python3 &>/dev/null && py_bin="python3"
+  [[ -z "$py_bin" ]] && command -v python &>/dev/null && py_bin="python"
+  if [[ -z "$py_bin" ]]; then
+    err "parallel 需要 python（解析 tasks.yaml + 执行三道闸门）"
     return 1
   fi
 
-  if ! command -v yq &>/dev/null && ! command -v python3 &>/dev/null; then
-    err "需要 yq 或 python3 解析 YAML"
+  local dispatcher="$SCRIPT_DIR/kanban-dispatch.py"
+  if [[ ! -f "$dispatcher" ]]; then
+    err "未找到 kanban-dispatch.py（应与本脚本同目录）"
     return 1
   fi
 
-  log "解析任务文件：$tasks_file"
+  # 路径翻译：原生 python 不认 MSYS 路径（/d/... 会被拼成 D:\d\...）
+  if command -v cygpath &>/dev/null; then
+    dispatcher=$(cygpath -w "$dispatcher")
+  fi
 
-  # 简单实现：每个任务起一个 claude-bg
-  local task_ids=()
-  while IFS= read -r line; do
-    [[ -z "$line" || "$line" =~ ^# ]] && continue
-    if [[ "$line" =~ ^[[:space:]]*-[[:space:]]*id:[[:space:]]*(.*) ]]; then
-      task_ids+=("${BASH_REMATCH[1]}")
-    fi
-  done < "$tasks_file"
-
-  warn "简化实现：实际请用 Python pipeline.py 处理批量并行"
-  warn "此函数仅作占位，请参考 skills/autonomous-delivery/SKILL.md"
-
-  return 1
+  "$py_bin" "$dispatcher" "$@"
 }
 
 # ════════════════════════════════════════════════════════════════
