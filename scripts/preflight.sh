@@ -41,6 +41,11 @@ WARN=0      # 降级项 → DEGRADED
 declare -a LINES=()
 declare -a ITEMS=()
 
+# python 解析器（§3 的 gateway_state.json 兜底与 §4 都依赖，故提前确定）
+PY=""
+command -v python3 &>/dev/null && PY="python3"
+[[ -z "$PY" ]] && command -v python &>/dev/null && PY="python"
+
 record() {  # record <level: ok|warn|fail> <名称> <详情>
   local level="$1" name="$2" detail="${3:-}"
   case "$level" in
@@ -75,33 +80,58 @@ if command -v hermes &>/dev/null; then
 fi
 
 # ═══ 3. 调度器（dispatcher）存活 —— 本闸门的核心 ═══
+# 判定顺序（抗文案变化）：
+#   a. hermes gateway status 明确说进程在跑 → 存活
+#   b. gateway_state.json 里 gateway_state=running 且 pid 仍存活 → 存活（兜底）
+#   c. pgrep 到独立 kanban daemon → 存活
+#   d. 以上都不成立 → 未确认存活
+# 注意：早期版本只匹配 "gateway process detected"，而真实正例文案是
+# "Gateway process running (PID ...)"、反例才是 "No gateway process detected"，
+# 导致 gateway 在跑时被误判为未运行（假阴性，已修）。
 DISPATCH="down"
 if command -v hermes &>/dev/null; then
   GW_STATUS=$(hermes gateway status 2>&1 || true)
-  if [[ "$GW_STATUS" == *"gateway process detected"* && "$GW_STATUS" != *"No gateway process detected"* ]]; then
+  if printf '%s' "$GW_STATUS" | grep -q "Gateway process running"; then
     DISPATCH="gateway"
-    record ok "调度器（dispatcher）" "gateway 进程存活"
   fi
+fi
+if [[ "$DISPATCH" == "down" && -n "$PY" ]]; then
+  GW_STATE=$("$PY" - <<'PYEOF' 2>/dev/null || true
+import json, pathlib, os, sys
+p = pathlib.Path(os.environ.get("HERMES_HOME", pathlib.Path.home() / "AppData/Local/hermes")) / "gateway_state.json"
+if not p.is_file():
+    p = pathlib.Path.home() / ".hermes" / "gateway_state.json"
+try:
+    d = json.loads(p.read_text(encoding="utf-8"))
+except Exception:
+    sys.exit(0)
+if d.get("gateway_state") != "running":
+    sys.exit(0)
+pid = d.get("pid")
+try:
+    os.kill(int(pid), 0)
+except Exception:
+    sys.exit(0)
+print("running")
+PYEOF
+)
+  [[ "$GW_STATE" == "running" ]] && DISPATCH="gateway-state"
 fi
 if [[ "$DISPATCH" == "down" ]]; then
   if command -v pgrep &>/dev/null && pgrep -f 'kanban daemon' &>/dev/null; then
     DISPATCH="daemon"
-    record ok "调度器（dispatcher）" "kanban daemon 进程存活"
   fi
 fi
-if [[ "$DISPATCH" == "down" ]]; then
-  if [[ "$REQUIRE_DISPATCHER" == "true" ]]; then
-    record fail "调度器（dispatcher）" "未运行：看板不会被认领、cron 不触发 → 本任务禁止并行派发"
-  else
-    record warn "调度器（dispatcher）" \
-      "未运行：看板不会被自动认领（gateway 未起或 daemon 未跑）→ 降级为串行 + 人工对账"
-  fi
+if [[ "$DISPATCH" != "down" ]]; then
+  record ok "调度器（dispatcher）" "存活（$DISPATCH）"
+elif [[ "$REQUIRE_DISPATCHER" == "true" ]]; then
+  record fail "调度器（dispatcher）" "未运行：看板不会被认领、cron 不触发 → 本任务禁止并行派发"
+else
+  record warn "调度器（dispatcher）" \
+    "未确认存活（hermes gateway status / gateway_state.json / pgrep 均无正信号）→ 降级为串行 + 人工对账"
 fi
 
 # ═══ 4. python（pipeline / scope-check 依赖） ═══
-PY=""
-command -v python3 &>/dev/null && PY="python3"
-[[ -z "$PY" ]] && command -v python &>/dev/null && PY="python"
 if [[ -n "$PY" ]]; then
   record ok "python" "$PY $("$PY" -c 'import sys;print(".".join(map(str,sys.version_info[:3])))' 2>/dev/null)"
 else

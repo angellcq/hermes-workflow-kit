@@ -4,6 +4,20 @@
 
 ---
 
+## v4.6.1（2026-09-13）— preflight 调度器检测假阴性修复
+
+| # | 改动 | 落点 |
+|---|------|------|
+| 1 | **调度器判定改三重信号**：① `hermes gateway status` 出现 `Gateway process running` → ② `gateway_state.json` 里 `gateway_state=running` 且 pid 存活（兜底）→ ③ `pgrep -f "kanban daemon"`；三者皆无才判未确认。修掉"gateway 明明在跑却判 DEGRADED"的**假阴性**——原实现匹配的是**否定措辞** `gateway process detected`，真实正例文案是 `Gateway process running (PID ...)`。同时把 python 解析器提前到 §3 之前（原实现里 §3 用到的 `$PY` 尚未定义，兜底分支形同虚设） | `scripts/preflight.sh` |
+| 2 | 顺带记录一次真实故障与处置：本机 gateway 计划任务启用但**启动失败**（`platforms.api_server.enabled=true` 且无 `API_SERVER_KEY` → 启动守卫拒绝 → 整个 gateway `startup_failed`，dispatcher 与 cron 全停）。按修复 B 禁用该平台（`hermes config set platforms.api_server.enabled false`）后 `hermes gateway restart`，gateway 恢复运行、cron 立即正常执行 | 本机 Hermes 配置（非套件内容） |
+
+### 测试
+
+- `bash scripts/preflight.sh` → **READY（exit 0）**；`--require-dispatcher` 亦 READY
+- `tests/run_tests.sh`：12 段 31 项全通过
+
+---
+
 ## v4.6.0（2026-09-13）— 路线 A 批次 C：执行体切原生 worker + 角色/模型策略 + 归档监控
 
 批次 C 目标：把**默认执行体**从外部 CLI 换成平台原生 worker，修正角色→profile 的过时策略，
