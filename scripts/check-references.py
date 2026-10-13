@@ -127,7 +127,8 @@ def load_stale_patterns() -> list[str]:
 
 def iter_repo_files():
     for p in ROOT.rglob("*"):
-        if p.suffix in (".md", ".sh", ".py") and ".git" not in p.parts:
+        # .git / .deploy-backup（部署备份是旧快照，不是活资产）/ .test-tmp（测试工作区）不参与引用检查
+        if p.suffix in (".md", ".sh", ".py") and not {".git", ".deploy-backup", ".test-tmp"} & set(p.parts):
             yield p
 
 

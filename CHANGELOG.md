@@ -4,7 +4,16 @@
 
 ---
 
-## v4.5（2026-10-13）— 并入《Hermes 看板机制说明书》+ 操作层按本机源码纠偏
+## v4.5.1（2026-10-13）— 部署校验假红修复
+
+| 分项 | 改动 | 落点 |
+|------|------|------|
+| 引用检查排除部署产物 | `iter_repo_files()` 跳过 `.deploy-backup/`（旧快照非活资产）与 `.test-tmp/`（测试工作区）；建投项目 8 处备份误报清零，已同步 5 个部署项目 | `scripts/check-references.py` |
+| 脚本计数期望 5→6（kit 外联动） | workflow-kit-deploy 技能（home 目录）的 `deploy-workflow-kit.sh` verify 期望值与 SKILL.md 两处计数文档改 6（v4.4 加 kanban-watchdog.py 时漏更） | home: `skills/workflow-kit-deploy/` |
+
+---
+
+## v4.5（2026-10-13）— 并入《Hermes看板机制说明书》+ 操作层按本机源码纠偏
 
 ### 改动
 
