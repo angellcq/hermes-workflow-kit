@@ -47,6 +47,19 @@ cp -r "$SRC/skills" "$PROJ/.hermes/"
 cp -r "$SRC/config" "$PROJ/.hermes/"
 cp -r "$SRC/scripts" "$PROJ/.hermes/"
 cp -r "$SRC/通用角色库" "$PROJ/.hermes/"
+
+# ═══ 4. 看板巡检 watchdog（可选，推荐；HOME 级，不是项目级）═══
+# 派发后自动巡检：卡完成/超时/悬空/lane 断头 → 主动通知并处置；无变化零 token
+cp "$SRC/scripts/kanban-watchdog.py" "$LOCALAPPDATA/hermes/scripts/"   # Windows（cron 要求脚本在 HERMES_HOME/scripts 下）
+# Linux/macOS: cp "$SRC/scripts/kanban-watchdog.py" ~/.hermes/scripts/
+# 注册 cron（monitor 模式：指纹不变不唤醒 agent；变化才跑处置 prompt）：
+hermes cron create "every 15m" \
+  "按 kanban-executor 规则处置 monitor 指纹 diff：CLAIM_PENDING 认领悬空 ready 卡；IN_PROGRESS_TIMEOUT 查因重派或 block；DONE_UNVERIFIED 跑验收闭环（git diff 非空+编译通过+白名单核对）后 comment+archive；BLOCKED 仅汇报；BRIDGE_LANE_DEAD/STALE 查 agent-bridge 任务目录判死因；DIAG_ACTIVE 按 diagnostics 项处置（孤儿锁 reclaim 等）。中文简报收尾。" \
+  --name kanban-board-watchdog --skill kanban-executor \
+  --monitor kanban-watchdog.py --deliver "feishu,bot-chat"
+
+# ═══ 5. 重启 Hermes 进程 ═══
+# 桌面端/网关/CLI 重启
 ```
 
 ## 四、接线入口：项目根 AGENTS.md 追加 §7

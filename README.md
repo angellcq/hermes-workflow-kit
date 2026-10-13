@@ -58,6 +58,7 @@ bash tests/run_tests.sh
 | `Hermes模板库/` | 01-10 文档模板 + 编码规范_跨语言.md | 编码规范唯一源 |
 | `通用角色库/` + `通用角色库说明.md` | 16 角色定义与清单 | **角色清单唯一源**（agent-bridge.sh 动态扫描自动同步） |
 | `skills/` | project-workflow / kanban-executor / codegraph-review / agent-bridge / autonomous-delivery / cross-language | 技能入口 |
+| `skills/kanban-executor/references/kanban机制说明书.md` | Hermes 看板底层机制（9 态状态机、dispatcher、锁/TTL、熔断回收、排障 SQL）+ 本机源码核实勘误 | **看板机制唯一事实源** |
 | `scripts/` | agent-bridge.sh / pipeline.py / check-references.py 等 | 可执行工具 |
 | `config/` | projects.yaml / languages.yaml / stale-patterns.txt | **项目注册表与语言清单唯一源** |
 | `tests/` | 最小测试集（run_tests.sh + test_pipeline.py） | 回归防线 |
@@ -76,6 +77,7 @@ bash tests/run_tests.sh
 | 项目注册表 | `config/projects.yaml` | pipeline.py 运行时加载 |
 | 语言清单 | `config/languages.yaml` | cross-language.sh 运行时加载 |
 | 版本记录 | `CHANGELOG.md` | 各文件不再附版本小表 |
+| 看板底层机制 | `skills/kanban-executor/references/kanban机制说明书.md` | executor/模板 08 引用 |
 
 ## 许可
 

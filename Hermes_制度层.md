@@ -139,7 +139,7 @@
 | 跨会话消息 | 纪要文档 + 派发指令（文档契约） |
 | Worktrees / 文件独占 | `git worktree`（terminal 执行）+ 任务卡 files_scope 声明 |
 | 端到端自动流水线 | `python scripts/pipeline.py` |
-| 任务看板 | 框架内置 `hermes kanban` |
+| 任务看板 | 框架内置 `hermes kanban`（机制事实源：`skills/kanban-executor/references/kanban机制说明书.md`；操作规程与防抢单铁律：`skills/kanban-executor/SKILL.md`） |
 
 模式选择：只需观点对齐 → A；需真实读写代码验证方案 → B；多模块并行改造 → B + worktree 隔离；端到端跑通需求 → pipeline 自动。
 
