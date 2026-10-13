@@ -4,6 +4,22 @@
 
 ---
 
+## v4.5（2026-10-13）— 并入《Hermes 看板机制说明书》+ 操作层按本机源码纠偏
+
+### 改动
+
+| # | 分项 | 改动 | 落点 |
+|---|------|------|------|
+| 1 | 机制事实源落户 | 说明书全文（零绝对路径版）+ 追加"勘误与补录"节 E1–E5（对照本机 Hermes 源码逐条核实：附录 A 命令不全、§8.4 已记 `skipped_nonspawnable` 事件非纯静默、配置键全表缺漏、`default_assignee` 兜底派出行为、`list --json` 无 claim_lock） | `skills/kanban-executor/references/kanban机制说明书.md` |
+| 2 | kanban-executor v1.0→v1.1 | 清除假命令（`reopen`→promote/unblock/reclaim、`runs --active`→`runs <卡号>`）；废除"悬空卡 assign default"（会触发网关抢单，与外部执行者铁律相反）改为补派 lane 名；全部示例补 `--board`；block 强制 `--kind`；状态词对齐 9 态真名+口径对照表；新增铁律区、孤儿锁 SOP、13.3 哨兵自承担清单（promote/reclaim/落盘计数） | `skills/kanban-executor/SKILL.md` |
+| 3 | 防抢单配置联动 | 本机 `kanban.default_assignee` 置空（原值 `default`：无 assignee 的 ready 卡会被网关自动兜底派出，与"代码只由 Claude Code 写"冲突）；操作规程侧由 executor 铁律 2 + 建卡核对 assignee 双保险 | 本机 config（文档侧记录于说明书勘误 E4） |
+| 4 | watchdog 纠偏增强 | 状态判据对齐真名（去掉永不出现的 `in_progress` 分支，信号名保留）；新增第三路信号 `DIAG_ACTIVE <卡> <kind>`（`diagnostics --json`，零 SQL 检出 stranded_in_ready/孤儿锁类），实测 tunnel-management 板输出正确 | `scripts/kanban-watchdog.py` |
+| 5 | 模板 08 schema 口径 | 头部声明补：真实列以 `PRAGMA table_info(tasks)` 为准（39 列、无 depends_on/updated_at）、9 态真名与口径词对照、assignee=路由键语义、命令必带 `--board` | `Hermes模板库/08_看板卡片模板.md` |
+| 6 | 流程入口对齐 | S4 建卡补 `--board`+lane assignee 要求与 link 串行表达；S5 状态机标注口径词↔真名；S7 标注 done≠archived | `skills/project-workflow/SKILL.md` |
+| 7 | 指针接线 | 制度层"任务看板"行、README 目录表与关键约定表加机制事实源指针（只引路径不搬正文，守单一事实源） | `Hermes_制度层.md` `README.md` |
+
+---
+
 ## v4.4（2026-09-09）— SOLID/重构落地（报告 ≤8 分项全量整改）
 
 依据《理论落地分析报告》（综合 7.4/10）对全部 ≤8 分项实施修复。

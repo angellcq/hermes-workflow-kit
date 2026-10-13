@@ -7,15 +7,17 @@
 
 设计约束（monitor 契约）：
   - 输出必须确定性：不含时间戳、不含年龄数值，年龄只用布尔阈值表达。
-  - agent 处置动作（complete/archive/block/assign）会改变看板状态，
-    指纹随之变化 → 天然去重，无需状态文件。
+  - agent 处置动作（complete/archive/block/promote/reclaim/unblock/assign）会改变
+    看板状态与诊断项，指纹随之变化 → 天然去重，无需状态文件。
   - 退出码恒为 0；自身异常输出 WATCHDOG_ERROR 行（下个 tick 若已修复自动消失）。
 
-检查两路信号：
-  1. hermes kanban list --json —— 悬空 ready 卡 / 超时 in_progress 卡 /
+检查三路信号（状态词为看板 9 态真名，见 kanban-executor/references/kanban机制说明书.md §四）：
+  1. hermes kanban list --json —— 悬空 ready 卡 / 超时 running 卡 /
      done 未验证卡 / blocked 带失败原因卡 / 汇总计数行
   2. agent-bridge 后台任务 —— ~/.workbuddy/agent-bridge/tasks/*/status.json：
      running 但 PID 已死（lane 断头）、running 且 PID 活着但日志超阈值无更新（疑似卡死）
+  3. hermes kanban diagnostics --json —— 活跃诊断项（孤儿 claim_lock、blocked 超期等），
+     每项输出一行 DIAG_ACTIVE <task_id>；处置规程见 kanban-executor「超时与孤儿回收」
 
 用法：
     python kanban-watchdog.py [--board <slug>]
@@ -107,7 +109,7 @@ def board_lines(board: str | None) -> list[str]:
         tid = t.get("id", "?")
         if status == "ready" and not t.get("assignee"):
             lines.append(f"CLAIM_PENDING {tid}")
-        elif status in ("in_progress", "running") and t.get("started_at"):
+        elif status == "running" and t.get("started_at"):
             if now - t["started_at"] > IN_PROGRESS_TIMEOUT:
                 lines.append(f"IN_PROGRESS_TIMEOUT {tid}")
         elif status == "done":
@@ -150,6 +152,36 @@ def bridge_lines() -> list[str]:
     return lines
 
 
+def diagnostics_lines(board: str | None) -> list[str]:
+    """Active task-level diagnostics (stranded_in_ready, orphan claim_lock,
+    stale blocked, ...) via `hermes kanban diagnostics --json`. Best-effort:
+    older Hermes without the subcommand yields nothing (returncode != 0)."""
+    cmd = [find_hermes(), "kanban"]
+    if board:
+        cmd += ["--board", board]
+    cmd += ["diagnostics", "--json"]
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    except (subprocess.TimeoutExpired, OSError):
+        return []
+    if out.returncode != 0:
+        return []  # command unavailable on this version — no signal, no false alarm
+    try:
+        items = json.loads(out.stdout)
+    except json.JSONDecodeError:
+        return []
+    lines: list[str] = []
+    for it in items if isinstance(items, list) else []:
+        tid = it.get("task_id")
+        if not tid:
+            continue  # board-level info row (e.g. dispatch_profiles), not actionable
+        for d in it.get("diagnostics") or []:
+            kind = d.get("kind")
+            if kind:
+                lines.append(f"DIAG_ACTIVE {tid} {kind}")
+    return lines
+
+
 def main() -> int:
     board = None
     args = sys.argv[1:]
@@ -158,7 +190,7 @@ def main() -> int:
         if i + 1 < len(args):
             board = args[i + 1]
     try:
-        out = board_lines(board) + bridge_lines()
+        out = board_lines(board) + bridge_lines() + diagnostics_lines(board)
     except Exception as e:  # noqa: BLE001 — watchdog 永不崩，异常即信号
         out = [f"WATCHDOG_ERROR {type(e).__name__}"]
     print("\n".join(sorted(set(out))))

@@ -25,8 +25,8 @@ model: sonnet
 |------|------|------|
 | 活跃任务无进展 > 4h | 黄警 | 标记 BLOCKED + 通知用户 |
 | daemon 异常退出 | 红警 | 尝试重启（最多 2 次） |
-| IN_PROGRESS > 8h | 红警 | 回收 + 创建新卡 |
-| READY > 24h | 黄警 | 强制分配给 default profile |
+| IN_PROGRESS > 8h | 红警 | 回收（`reclaim`）+ 重新派发 |
+| READY > 24h | 黄警 | 补派外部执行者 lane 名（**禁分配给 default/真实 profile**，防网关抢单，见 kanban-executor 铁律 2） |
 
 ## 任务状态机
 
@@ -47,8 +47,8 @@ TODO → IN_PROGRESS → IN_REVIEW → DONE
 ## 心跳与续接
 
 ```bash
-# 每 30 分钟执行巡检
-hermes kanban runs --active
+# 每 30 分钟执行巡检（列运行中卡：list 按状态过滤；runs 需带卡号）
+hermes kanban --board <板> list --status running
 
 # 心跳写入
 echo "[$(date -Iseconds)] heartbeat task=t-001" \

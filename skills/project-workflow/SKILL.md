@@ -48,12 +48,12 @@ S0 需求受理 → S1 需求澄清 → S2 PRD编写 → S3 HLD/DD设计
 ### S4 任务拆解与派发
 - 先读 `04_任务卡模板.md`
 - 拆解五原则：可验收 / 低耦合 / 单事务(≤4h) / 显式依赖 / 有回溯
-- 每张卡 → `hermes kanban create` + 写 TASK.md
-- 派发策略：独立并行 / 依赖串行 / 同文件强制串行
+- 每张卡 → `hermes kanban --board <板> create`（**命令必须显式带 `--board`**；`--assignee` 填外部执行者 lane 名而非真实 profile 名，防网关自动抢单，规则见 `kanban-executor` 铁律 2）+ 写 TASK.md
+- 派发策略：独立并行 / 依赖串行 / 同文件强制串行（串行约束用 `link <子卡> <父卡>` 显式表达，不靠记忆）
 
 ### S5 开发跟踪
 - 检查点驱动：派发确认时 / 里程碑 / 用户询问 / 阻塞时
-- 状态机：TODO → IN_PROGRESS → IN_REVIEW → DONE / BLOCKED
+- 状态机：TODO → IN_PROGRESS → IN_REVIEW → DONE / BLOCKED（文档口径词；落库真名为 ready/running/review/done/blocked，对照表见 `kanban-executor`，查卡扫描一律用真名）
 - 进度预警：<70% 黄警 / <50% 红警
 
 ### S6 最终验证
@@ -62,7 +62,7 @@ S0 需求受理 → S1 需求澄清 → S2 PRD编写 → S3 HLD/DD设计
 - 编码交付：`git diff --stat` 确认变更 + 项目编译命令通过
 
 ### S7 归档交付
-- `hermes kanban archive` 归档全部卡片
+- `hermes kanban --board <板> archive` 归档全部卡片（done≠archived：验收闭环标 `done`，归档动作才离视图）
 - 交付物清单齐套
 
 ## 三技能分工（本技能是入口）
