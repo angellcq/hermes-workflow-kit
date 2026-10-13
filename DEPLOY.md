@@ -51,8 +51,18 @@ cp 通用角色库/*.md ~/.claude/agents/
 bash ~/.hermes/scripts/sync-roles-to-profiles.sh
 # 验证：hermes profile list 应显示 16 个
 
-# ═══ 7. 重启 Hermes 进程 ═══
-# 桌面端/网关/CLI 退出重开
+# ═══ 7. 看板巡检 watchdog（可选，推荐）═══
+# 派发后自动巡检：卡完成/超时/悬空/lane 断头 → 主动通知并处置；无变化零 token
+cp scripts/kanban-watchdog.py "$LOCALAPPDATA/hermes/scripts/"   # Windows（cron 要求脚本在 HERMES_HOME/scripts 下）
+# Linux/macOS: cp scripts/kanban-watchdog.py ~/.hermes/scripts/
+# 注册 cron（monitor 模式：指纹不变不唤醒 agent；变化才跑处置 prompt）：
+hermes cron create "every 15m" \
+  "按 kanban-executor 规则处置 monitor 指纹 diff：CLAIM_PENDING 认领悬空 ready 卡；IN_PROGRESS_TIMEOUT 查因重派或 block；DONE_UNVERIFIED 跑验收闭环（git diff 非空+编译通过+白名单核对）后 comment+archive；BLOCKED 仅汇报；BRIDGE_LANE_DEAD/STALE 查 agent-bridge 任务目录判死因。中文简报收尾。" \
+  --name kanban-board-watchdog --skill kanban-executor \
+  --monitor kanban-watchdog.py --deliver "feishu,bot-chat"
+
+# ═══ 8. 重启 Hermes 进程 ═══
+# 桌面端/网关/CLI 重启
 ```
 
 > 回滚：把 `.bak.<日期>` 备份拷回原名即可。

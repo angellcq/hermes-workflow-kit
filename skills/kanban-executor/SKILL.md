@@ -86,6 +86,6 @@ Claude Code 完成任务后，必须验证产出再标记 complete：
 - **上游**：`project-workflow` 在 S4 阶段拆出任务卡后，交给本技能建卡派发（`kanban create` + 写 TASK.md + 认领）
 - **下游**：编码代理（Claude Code/Codex）产出后，本技能做**完成验证闭环**（git diff 非空 + 编译通过 + changed_files 核对），通过才标 DONE
 - **旁路**：`codegraph-review` 在编码代理改码**之前**被调用评估波及面，评估报告作为任务卡附件
-- **兜底**：cron 任务 `kanban-board-watchdog`（每 30 分钟）自动执行本技能的巡检逻辑（认领悬空卡、回收超时任务）
+- **兜底**：cron 任务 `kanban-board-watchdog` 每 15 分钟跑 `scripts/kanban-watchdog.py`（monitor 模式，指纹不变不唤醒 agent、零 token；变化才唤醒本技能规则处置：认领悬空卡、超时卡 block、done 卡验收闭环后归档、lane 断头判死因）。指纹信号：CLAIM_PENDING / IN_PROGRESS_TIMEOUT / DONE_UNVERIFIED / BLOCKED / BRIDGE_LANE_DEAD / BRIDGE_LANE_STALE。部署见 kit DEPLOY.md §7
 
 **调用时机**：只要看板出现 ready/blocked/超时任务，或 S4 需要建卡派发，就加载本技能。
