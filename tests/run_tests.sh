@@ -113,13 +113,17 @@ else
 fi
 
 echo "══ [8/9] cross-language 清单加载 ══"
-if bash scripts/cross-language.sh list 2>/dev/null | grep -q "强类型编译型"; then
+# 注意：先捕获输出再 grep -q。`cmd | grep -q` 在输出超过管道缓冲（实测 >64KB/MSYS ~4KB）
+# 时 grep 提前退出 → 上游收 SIGPIPE 而"报错"，本用例曾因此误判失败。
+LANG_LIST=$(bash scripts/cross-language.sh list 2>/dev/null)
+if echo "$LANG_LIST" | grep -q "强类型编译型"; then
   ok "languages.yaml categories 加载"
 else
   bad "cross-language list 加载失败"
 fi
 TP2="$ROOT/.test-tmp/pyproj"; mkdir -p "$TP2"; touch "$TP2/pyproject.toml"
-if bash scripts/cross-language.sh detect "$TP2" 2>/dev/null | grep -q "pyproject.toml → python"; then
+LANG_DETECT=$(bash scripts/cross-language.sh detect "$TP2" 2>/dev/null)
+if echo "$LANG_DETECT" | grep -q "pyproject.toml → python"; then
   ok "languages.yaml markers 检测"
 else
   bad "cross-language detect 失败"
