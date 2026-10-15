@@ -4,6 +4,25 @@
 
 ---
 
+## v4.5.3（2026-10-15）— 桥任务完成唤醒链路（B 方案：事件驱动续接）
+
+实测断链根因：`claude-bg` 只在启动时写 status.json=running，claude 完成后**没有任何代码写终态**
+→ 哨兵/巡检按状态判活永远等不到 → 对话内轮询硬等又被 terminal 超时（420s/次）与 turn 生命周期
+拖死，"Claude Code 完成了但后续工作不继续"。修复为三段唤醒链：**收割器写终态 → watchdog 报
+BRIDGE_LANE_DONE → 巡检 agent 验收闭环 + ack**。
+
+| # | 改动 | 落点 |
+|---|------|------|
+| 1 | `claude-bg` 经 `<task_dir>/run.sh` 收割器包装：claude 无论成败退出必写 `completed/failed` + exit_code + finished_at 进 status.json；status.pid 改记收割器 PID，判活与终态两信号一致 | `scripts/agent-bridge.sh` |
+| 2 | watchdog 对未确认桥任务终态报 `BRIDGE_LANE_DONE <task_id> <status>`（ack 文件去重，处置完 `touch ack` 清信号，避免每轮重复唤醒） | `scripts/kanban-watchdog.py` |
+| 3 | §2 新增 DONE 信号处置 SOP（反查卡→§4 闭环→complete/block→**必须写 ack**）；§4 补"收口前核验产出已入库"（`git log -- <文件>` 反查 + `merge-base --is-ancestor` 核推送，T-KSDEF-1 实测坑）；存量无 run.sh 任务按 DEAD 补终态 | `skills/kanban-executor/SKILL.md` |
+| 4 | 模式 2 补收割器说明与 HERMES_HOME/scripts 副本同步警告（cron monitor 脚本读 `HERMES_HOME/scripts/`，改项目副本不同步会静默失效） | `skills/agent-bridge/SKILL.md` |
+
+已实测：假 claude 全链路（收割器写 completed → watchdog 报 DONE → 部分 ack 只报剩余 → 全 ack 消失）通过；
+建投项目部署副本已同步（md5 一致）并挂回巡检 cron。
+
+---
+
 ## v4.5.2（2026-10-13）— 吸收三份外部文档的有效增量（复用调研 / TDD 闸门 / Git 口径）
 
 来源：三份 ruoyi-claude 项目 wiki 概念页（coding-style / development-workflow / git-workflow）与本仓资产逐条比对，

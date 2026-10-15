@@ -106,6 +106,16 @@ Task started: t-001
   Output: ~/.workbuddy/agent-bridge/tasks/t-001/output.json
 ```
 
+**收割器（run.sh）**：claude-bg 不裸起 claude，而是起 `<task_dir>/run.sh` 包装层——claude
+退出（无论成败）必把 status.json 改写为 `completed`/`failed` + exit_code + finished_at。
+status.json 里的 `pid` 是收割器的 PID，它全程存活直到 claude 退出，因此「pid_alive 判活」与
+「status.json 终态」两条信号一致（旧版只在启动时写 running，claude 完成后状态永远停留 →
+没有任何唤醒源，S5/S6 断链——这是本收割器要解决的问题）。kanban-watchdog 对未确认终态报
+`BRIDGE_LANE_DONE`，驱动巡检 agent 验收续接；**验收闭环走完才准 `touch <task_dir>/ack` 清信号**
+（详见 `kanban-executor` §2）。
+⚠ 改项目 `.hermes/scripts/agent-bridge.sh` / `kanban-watchdog.py` 后，若 cron 等入口从
+`HERMES_HOME/scripts/` 读同名脚本，必须同步拷贝并 md5 核对（实测曾三处副本不同步、改动静默失效）。
+
 **监控**：
 
 ```bash

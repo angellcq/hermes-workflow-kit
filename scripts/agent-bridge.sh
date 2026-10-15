@@ -323,24 +323,55 @@ cmd_claude_bg() {
 }
 EOF
 
-  # 后台启动 claude
+  # 后台启动 claude（经 run.sh 收割器包装：claude 退出必写终态到 status.json，
+  # 巡检 watchdog 靠 "running→completed/failed" 的指纹变化唤醒处置 agent 续接 S5/S6）
+  local started_at
+  started_at="$(date -Iseconds)"
+  cat > "$task_dir/run.sh" <<'RUNEOF'
+#!/usr/bin/env bash
+# agent-bridge 收割器：调用 claude，无论成败都把终态落进 status.json。
+# 参数顺序：claude_bin task_dir task_md max_turns allowed_tools task_id role started_at
+set +e
+CLAUDE_BIN="$1"; TASK_DIR="$2"; TASK_MD="$3"; MAX_TURNS="$4"
+ALLOWED_TOOLS="$5"; TASK_ID="$6"; ROLE="$7"; STARTED_AT="$8"
+"$CLAUDE_BIN" -p "读 $TASK_MD 并执行。完成后输出修改文件清单与 diff 摘要到 $TASK_DIR/output.txt" \
+  --allowedTools "$ALLOWED_TOOLS" \
+  --max-turns "$MAX_TURNS" \
+  >> "$TASK_DIR/claude.log" 2>&1
+RC=$?
+FIN="$(date -Iseconds)"
+if [ "$RC" -eq 0 ]; then ST="completed"; else ST="failed"; fi
+cat > "$TASK_DIR/status.json" <<EOF
+{
+  "task_id": "$TASK_ID",
+  "role": "$ROLE",
+  "status": "$ST",
+  "exit_code": $RC,
+  "started_at": "$STARTED_AT",
+  "finished_at": "$FIN"
+}
+EOF
+exit "$RC"
+RUNEOF
+
   log "后台启动 [task_id=$task_id, role=$role]"
-  nohup "$CLAUDE_BIN" -p "读 $task_md 并执行。完成后输出修改文件清单与 diff 摘要到 $task_dir/output.txt" \
-    --allowedTools "Read,Edit,Write,Bash,Grep" \
-    --max-turns "$max_turns" \
-    > "$task_dir/claude.log" 2>&1 &
+  nohup bash "$task_dir/run.sh" \
+    "$CLAUDE_BIN" "$task_dir" "$task_md" "$max_turns" \
+    "Read,Edit,Write,Bash,Grep" "$task_id" "$role" "$started_at" \
+    >/dev/null 2>&1 &
 
   local pid=$!
   echo "$pid" > "$task_dir/pid"
 
-  # 更新 status
+  # 更新 status（running；pid 记的是收割器 run.sh——它全程存活直到 claude 退出并写终态，
+  # 因此 pid_alive 判活与 status.json 终态两条信号一致）
   cat > "$task_dir/status.json" <<EOF
 {
   "task_id": "$task_id",
   "role": "$role",
   "status": "running",
   "pid": $pid,
-  "started_at": "$(date -Iseconds)"
+  "started_at": "$started_at"
 }
 EOF
 

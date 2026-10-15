@@ -88,6 +88,17 @@ hermes kanban --board <板> list --status ready --json
 
 - lane worker（agent-bridge 后台任务）由哨兵脚本轮询 `~/.workbuddy/agent-bridge/tasks/*/status.json`
   判活：PID 死 → `BRIDGE_LANE_DEAD`；日志超阈值无更新 → `BRIDGE_LANE_STALE`
+- **完成唤醒信号 `BRIDGE_LANE_DONE <task_id> <completed|failed>`**：claude-bg 经 task_dir/run.sh
+  收割器包装，claude 退出必写终态进 status.json（旧版只在启动时写 running，完成后状态永远停留 →
+  无人续接）。watchdog 对未确认终态报 DONE，巡检 agent 收到后：
+  1. 读该任务目录 status.json / output.txt / claude.log 尾部；
+  2. 反查看板卡（task_id 即卡号），走 §4 完成验证闭环，通过 comment+complete，失败 block；
+  3. **处置完必须 `touch <task_dir>/ack`** —— 不写 ack 每轮巡检重复唤醒；验收没走完不许写 ack
+     （只 touch 不验收 = 信号被吞，比不报更糟）。板外任务（无对应卡）同样验收或汇报后写 ack。
+  4. 收割器上线前派发的存量任务（目录无 run.sh），status.json 若仍 running 但 PID 已死，
+     按 BRIDGE_LANE_DEAD 处理：核对其 output.txt 实际产出，补写终态 + ack。
+  ⚠ cron 的 monitor 脚本从 `HERMES_HOME/scripts/kanban-watchdog.py` 读取，改项目
+  `.hermes/scripts/` 版本后必须同步拷贝（md5 核对一致才生效）。
 - Hermes 内置 worker 的心跳走 `hermes kanban --board <板> heartbeat <卡号>`（worker 侧发）
 - 每 15 分钟 cron 巡检（见兜底 watchdog）；`running` 卡超时判据 = claim TTL 15 分钟过期后仍未
   reclaim，或 `dispatch_stale_timeout_seconds`/`max_runtime_seconds` 命中
@@ -110,11 +121,24 @@ hermes kanban --board <板> list --status ready --json
 外部执行者完成任务后，必须验证产出再标记 complete：
 
 ```
+0. git log --oneline -- <产出文件>   # 该文件最后一次提交是否就是本卡的产出
 1. git diff --stat HEAD          # 确认有变更（实据，不看自报）
 2. 项目编译命令                    # 编译通过
 3. 核对 changed_files            # 与 TASK.md 一致
 4. hermes kanban --board <板> complete <卡号> --summary "..." --metadata '{"changed_files":[...]}'
 ```
+
+**收口（archive）前必须额外核验「产出已入库」**：卡标 done ≠ 代码已提交或已推送。
+按产出文件反查提交并在推送后比对：
+
+```bash
+git log --oneline -1 -- <产出文件>                      # 拿到 commit
+git merge-base --is-ancestor <commit> origin/<分支>   # 非 0 = 未推送
+```
+
+未推送就归档 = 卡没了、代码还在本地，追责链断。实测坑：卡已 done，但对应实现只是工作区
+里的未提交改动（`git log --grep=<卡号>` 为空），必须先补提交+推送再收口；同理按卡号 grep
+查不到不等于功能没实现，**用产出文件路径反查提交**比用卡号 grep 可靠。
 
 **零产出判定**：`git status --short` 和 `git diff --stat HEAD` 均为空 → 委派失败 → STOP 转人工处置
 （先 `block --kind needs_input`，不自动重派——`consecutive_failures` 达 2 次即熔断，熔断后不再自动重派）。
@@ -169,7 +193,7 @@ kit 文档与聊天里习惯用的进度词，落库真名如下（写卡/查卡
 - **上游**：`project-workflow` 在 S4 阶段拆出任务卡后，交给本技能建卡派发（顺序固定为 **§0 建卡上板 → 写 TASK.md → 认领**，禁止先写 TASK.md 后补卡；`create` 带 lane assignee，**建卡后立即核对 assignee**，防被内置 dispatcher 抢单或悬空不派）
 - **下游**：编码代理（Claude Code/Codex）产出后，本技能做**完成验证闭环**（git diff 非空 + 编译通过 + changed_files 核对），通过才标 `done`
 - **旁路**：`codegraph-review` 在编码代理改码**之前**被调用评估波及面，评估报告作为任务卡附件
-- **兜底**：cron 任务 `kanban-board-watchdog` 每 15 分钟跑 `scripts/kanban-watchdog.py`（monitor 模式，指纹不变不唤醒 agent、零 token；变化才唤醒本技能规则处置：悬空卡补派 lane、超时卡回收/阻塞、done 卡验收闭环后归档、lane 断头判死因、孤儿锁 reclaim）。指纹信号：CLAIM_PENDING / IN_PROGRESS_TIMEOUT / DONE_UNVERIFIED / BLOCKED / BRIDGE_LANE_DEAD / BRIDGE_LANE_STALE / DIAG_ACTIVE。部署见 kit DEPLOY.md「三、部署步骤」第 4 步（看板巡检 watchdog）
+- **兜底**：cron 任务 `kanban-board-watchdog` 每 15 分钟跑 `scripts/kanban-watchdog.py`（monitor 模式，指纹不变不唤醒 agent、零 token；变化才唤醒本技能规则处置：悬空卡补派 lane、超时卡回收/阻塞、done 卡验收闭环后归档、lane 断头判死因、孤儿锁 reclaim）。指纹信号：CLAIM_PENDING / IN_PROGRESS_TIMEOUT / DONE_UNVERIFIED / BLOCKED / BRIDGE_LANE_DEAD / BRIDGE_LANE_STALE / BRIDGE_LANE_DONE（处置见 §2）/ DIAG_ACTIVE。部署见 kit DEPLOY.md「三、部署步骤」第 4 步（看板巡检 watchdog）
 
 **调用时机**：看板出现 ready/blocked/超时任务，或 S4 需要建卡派发时，加载本技能。
 

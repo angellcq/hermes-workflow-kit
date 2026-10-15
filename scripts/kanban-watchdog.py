@@ -140,7 +140,12 @@ def bridge_lines() -> list[str]:
             continue
         status = st.get("status", "unknown")
         if status in ("completed", "failed", "killed"):
-            continue  # 桥任务终态由看板验收闭环负责，不重复报
+            # 唤醒信号：终态未确认（无 ack 文件）时报 BRIDGE_LANE_DONE，
+            # 驱动巡检 agent 验收产出并闭环看板卡；处置完 touch <task_dir>/ack
+            # 本行消失（指纹只在"新完成"时变化一次，避免每轮重复唤醒）。
+            if not (sd / "ack").exists():
+                lines.append(f"BRIDGE_LANE_DONE {sd.name} {status}")
+            continue
         if status in ("running", "starting"):
             pid = int(st.get("pid") or 0)
             if not pid_alive(pid):
