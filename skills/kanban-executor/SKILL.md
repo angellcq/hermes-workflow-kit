@@ -1,7 +1,7 @@
 ---
 name: kanban-executor
 description: "Use when 看板任务需要自动认领/巡检/回收. Kanban 任务生命周期自动化."
-version: 1.1.0
+version: 1.1.1
 platforms: [windows, linux, macos]
 ---
 
@@ -102,6 +102,26 @@ hermes kanban --board <板> list --status ready --json
      按 BRIDGE_LANE_DEAD 处理：核对其 output.txt 实际产出，补写终态 + ack。
   ⚠ cron 的 monitor 脚本从 `HERMES_HOME/scripts/kanban-watchdog.py` 读取，改项目
   `.hermes/scripts/` 版本后必须同步拷贝（md5 核对一致才生效）。
+
+#### 哨兵状态路径：全局 watchdog 与项目哨兵不是同一个文件
+
+两个路径各自硬编码，不共享：
+
+| 读/写方 | 路径 |
+|---|---|
+| `kanban-watchdog.py`（全局 cron） | `$HERMES_HOME/logs/sentinel_state.json` 的 **mtime**（可用 `WF_STATE_FILE` 覆盖） |
+| `sentinel_tick.py`（项目内跑） | `<项目>/.hermes/logs/sentinel_state.json`（含 cooldown/fails/dispatched_total，是权威状态） |
+
+后果：哨兵明明每 5 分钟在跑，全局巡检仍每轮报 `SENTINEL_DEAD no-state`；而 monitor 的指纹是确定的，所以不会反复唤醒（只多一行噪音，并把真信号 `ASSIGNEE_DRIFT` 淹淡）。
+修法（不改全局脚本时）：给 cron 的哨兵入口加一层**包装壳**，tick 成功才补一个全局心跳——`"$PY" scripts/sentinel_tick.py "$@"; rc=$?; if [ "$rc" -eq 0 ]; then mkdir -p "$HERMES_HOME/logs"; touch "$HERMES_HOME/logs/sentinel_state.json"; fi; exit "$rc"`。
+只报 `rc=0` 才 touch 是关键：失败时不 touch，旧 mtime 才能让 `SENTINEL_DEAD age=` 真报警。
+
+#### 挂哨兵 cron 的两条硬约束（写错就永远装不上）
+
+1. **schedule 是位置参数**，没有 `--every`：`hermes cron create "every 5m" --no-agent --name sentinel-<板> --script sentinel-<板>.sh --deliver local`。
+2. **`--script` 只接受 `$HERMES_HOME/scripts/` 下的文件名**，不接受任意路径——项目里的 `sentinel_tick.py` 必须先放一个包装壳到 `$HERMES_HOME/scripts/`，再用文件名引用。
+
+另：`--no-agent`（纯脚本、不烧 token）+ `--deliver local`（每 5 分钟的 TICK_SUMMARY 不往聊天里发）是哨兵的常规组合；`deliver=local` 不等于不执行，只是不投递。
 - Hermes 内置 worker 的心跳走 `hermes kanban --board <板> heartbeat <卡号>`（worker 侧发）
 - 每 15 分钟 cron 巡检（见兜底 watchdog）；`running` 卡超时判据 = claim TTL 15 分钟过期后仍未
   reclaim，或 `dispatch_stale_timeout_seconds`/`max_runtime_seconds` 命中
@@ -117,7 +137,7 @@ watchdog 信号后只处置三类：`SENTINEL_DEAD`（哨兵僵死 → 补跑 ti
 | 情形 | 判别 | 处置 |
 |------|------|------|
 | 哨兵僵死（卡挂无人派） | watchdog 报 `SENTINEL_DEAD age=<sec>s`（state 文件超 900s 未 touch） | 先跑 `python scripts/sentinel_tick.py` 再复查；反复出现 → 查 cron 是否在 tick |
-| `SENTINEL_DEAD no-state`（首次部署） | state 文件不存在 | 正常现象：先跑 `python scripts/sentinel_tick.py` 再复查，之后该行消失 |
+| `SENTINEL_DEAD no-state` | state 文件不存在 | **先分清两种部署形态**：哨兵与 watchdog 同目录（哨兵也跑在 `HERMES_HOME`）→ 跑一次 tick 就该消失；**哨兵跑在项目 `.hermes/` 而 watchdog 跑在 `HERMES_HOME` → 这个行永远不会自行消失**（两者路径不重合，见下"哨兵状态路径"段），不是 bug，需补全局心跳 |
 | lane 进程已死（卡仍 running） | status.json 的 PID 不存活 | `reclaim <卡号>` 释放认领 → 重新派发 |
 | 孤儿 claim_lock（卡 ready 但 claim 报 lock=） | **裸跑一次 claim（不要重定向输出）**看真实报错 | 确认锁主进程确已死亡 → `reclaim <卡号>`；**不要用 `unblock` 治孤儿锁**（卡不是 blocked 态，无效动作） |
 | 卡超时（running 过久） | `show` 对比 `started_at`；或 `diagnostics` 列出活跃诊断项 | 可恢复 → `reclaim` 后重派；不可恢复 → `block --kind needs_input "需人工介入：XXX"` |
@@ -150,6 +170,16 @@ git merge-base --is-ancestor <commit> origin/<分支>   # 非 0 = 未推送
 未推送就归档 = 卡没了、代码还在本地，追责链断。实测坑：卡已 done，但对应实现只是工作区
 里的未提交改动（`git log --grep=<卡号>` 为空），必须先补提交+推送再收口；同理按卡号 grep
 查不到不等于功能没实现，**用产出文件路径反查提交**比用卡号 grep 可靠。
+
+**归档消音（done 卡不归档就开始刷噪音）**：`DONE_UNVERIFIED` 的判据是 `done` + 无验收标记，
+**不校验 workspace 目录是否还存在**。所以 worktree / 临时目录一清理，历史 done 卡就会带着死路径
+每轮巡检刷一行，把 `SENTINEL_DEAD` / `ASSIGNEE_DRIFT` 这类真信号淹掉。验收通过的卡必须收口：
+
+```bash
+for t in <卡...>; do hermes kanban --board <板> archive "$t"; done
+```
+
+批尾统一归档，别留待下次；清理 worktree 的那一步就顺手归档，两件事分开做必漏。
 
 **零产出判定**：`git status --short` 和 `git diff --stat HEAD` 均为空 → 委派失败 → STOP 转人工处置
 （先 `block --kind needs_input`，不自动重派——`consecutive_failures` 达 2 次即熔断，熔断后不再自动重派）。
