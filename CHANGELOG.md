@@ -4,6 +4,21 @@
 
 ---
 
+## v5.0-P3（2026-10-22）— 哨兵可观测（watchdog 新信号 + 技能口径修正）
+
+- 新信号 2 个：watchdog 增 `ASSIGNEE_DRIFT <tid> <assignee|empty>`（ready 卡 assignee 为空 /
+  非 `cc-` 前缀 / 真实 Hermes profile 名 —— 防网关内置 dispatcher 抢单与 cc- 哨兵双写同一张卡）
+  与 `SENTINEL_DEAD <no-state|age=Ns>`（sentinel_state.json 缺失或超 900 秒未 touch —— 防哨兵
+  僵死卡挂 20 小时无人知的历史事故重演）；`--json` 契约不变，既有 7 类信号语义未动
+- 哨兵接线建议：cron `hermes cron add "cd <repo> && python scripts/sentinel_tick.py" --every 5m`；
+  技能口径修正：`--initial-status running` 不能替代 `claim`（会被 `reconcile_orphaned_running`
+  60 秒内打回 ready）、「哨兵负责派，agent 只验收」、排错表补 `SENTINEL_DEAD no-state` 处置
+- 已知限制：Windows 上 `taskkill //PID` 不可靠，杀哨兵进程用 `hermes` 自带命令或任务管理器；
+  哨兵本体（`scripts/card-sentinel.py` / `sentinel_tick.py`）在 P3A 并行交付，本分支只做
+  watchdog 侧信号与文档
+
+---
+
 ## v5.0-P2（2026-10-22）— 派单器（守卫硬实现 + 三态产出校验）
 
 背景：kit 过去的派单是"会话里手工敲 `claude -p`"，三个实测问题——①派单不收尾（工人零产出被当完成，

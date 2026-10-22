@@ -59,7 +59,9 @@ bash tests/run_tests.sh
 | `通用角色库/` + `通用角色库说明.md` | 16 角色定义与清单 | **角色清单唯一源**（agent-bridge.sh 动态扫描自动同步） |
 | `skills/` | project-workflow / kanban-executor / codegraph-review / agent-bridge / autonomous-delivery / cross-language | 技能入口 |
 | `skills/kanban-executor/references/kanban机制说明书.md` | Hermes 看板底层机制（9 态状态机、dispatcher、锁/TTL、熔断回收、排障 SQL）+ 本机源码核实勘误 | **看板机制唯一事实源** |
-| `scripts/` | agent-bridge.sh / dispatch-lane.sh / card_check.py / wf_common.py / pipeline.py / check-references.py 等 | 可执行工具 |
+| `scripts/` | agent-bridge.sh / dispatch-lane.sh / card-sentinel.py / sentinel_tick.py / card_check.py / wf_common.py / pipeline.py / check-references.py 等 | 可执行工具 |
+| `scripts/card-sentinel.py` | 哨兵本体：定时扫板，把 `cc-` 前缀 ready 卡交给 `dispatch-lane.sh` 派发（promote/reclaim/并发熔断都在这） | cc- 卡唯一派单者 |
+| `scripts/sentinel_tick.py` | 哨兵 tick 入口：跑一轮哨兵扫描并 touch `logs/sentinel_state.json`（watchdog 按其 mtime 判哨兵僵死） | 哨兵心跳落盘 |
 | `config/` | projects.yaml / languages.yaml / stale-patterns.txt / wf.env.example | **项目注册表与语言清单唯一源**（wf.env.example=派单器配置样例） |
 | `tests/` | 最小测试集（run_tests.sh + test_pipeline.py） | 回归防线 |
 | `DEPLOY.md` | 部署 SOP | — |
@@ -78,6 +80,15 @@ bash tests/run_tests.sh
 | 语言清单 | `config/languages.yaml` | cross-language.sh 运行时加载 |
 | 版本记录 | `CHANGELOG.md` | 各文件不再附版本小表 |
 | 看板底层机制 | `skills/kanban-executor/references/kanban机制说明书.md` | executor/模板 08 引用 |
+
+### 哨兵部署（cron 推荐，示例，勿照抄后忘改 `<repo>`）
+
+```bash
+hermes cron add "cd <repo> && python scripts/sentinel_tick.py" --every 5m
+```
+
+哨兵每 5 分钟扫一次板派发 `cc-` 卡；watchdog（`scripts/kanban-watchdog.py`）按
+`logs/sentinel_state.json` 的 mtime 判哨兵僵死（超 900 秒报 `SENTINEL_DEAD`）。
 
 ## 许可
 

@@ -65,6 +65,9 @@ hermes kanban --board <板> complete <id> --summary "<验收结论>" --metadata 
 约束：
 - 标题前缀 = 任务卡 ID（`T-003: ...`），看板 ↔ 任务卡双向可回溯
 - `--idempotency-key` 一律填任务卡 ID，补账/重跑天然去重
+- **`--initial-status running` 不能替代 `claim`**：无 `claim_lock/claim_expires` 的 running 卡
+  会被 `reconcile_orphaned_running` 在 ~60 秒内打回 `ready`（`kanban_db_dispatch.py:852-913`）。
+  running 占位只用于"建卡后立刻手动 `claude -p` 派发"的窗口期，占位后必须马上派发
 - **会话收尾自查**：diff `.hermes/tasks/` 新增 TASK.md 与本会话建卡 id 清单，
   发现漏板的当场补建并回补状态，禁止留给下次
 - 已合并的漏板历史任务补账：`create --initial-status running` 后立刻 `complete --summary "<commit+验收结论>"`；
@@ -105,8 +108,16 @@ hermes kanban --board <板> list --status ready --json
 
 ### 3. 超时与孤儿回收
 
+**哨兵负责派，agent 只验收**：promote（父卡 done 后提子卡）、reclaim（过期/孤儿认领释放）、
+并发熔断计数均由 `card-sentinel.py`（cron 每 5 分钟 `sentinel_tick.py`）承担；agent 收到
+watchdog 信号后只处置三类：`SENTINEL_DEAD`（哨兵僵死 → 补跑 tick / 查 cron）、
+`ASSIGNEE_DRIFT`（漂移卡会被网关抢单 → 立即 `assign` 回 `cc-` 前缀 lane）、`BLOCKED`
+（按「完成验证闭环」与「超时与孤儿回收」处置）。不要在 agent 侧重复实现哨兵的派发动作。
+
 | 情形 | 判别 | 处置 |
 |------|------|------|
+| 哨兵僵死（卡挂无人派） | watchdog 报 `SENTINEL_DEAD age=<sec>s`（state 文件超 900s 未 touch） | 先跑 `python scripts/sentinel_tick.py` 再复查；反复出现 → 查 cron 是否在 tick |
+| `SENTINEL_DEAD no-state`（首次部署） | state 文件不存在 | 正常现象：先跑 `python scripts/sentinel_tick.py` 再复查，之后该行消失 |
 | lane 进程已死（卡仍 running） | status.json 的 PID 不存活 | `reclaim <卡号>` 释放认领 → 重新派发 |
 | 孤儿 claim_lock（卡 ready 但 claim 报 lock=） | **裸跑一次 claim（不要重定向输出）**看真实报错 | 确认锁主进程确已死亡 → `reclaim <卡号>`；**不要用 `unblock` 治孤儿锁**（卡不是 blocked 态，无效动作） |
 | 卡超时（running 过久） | `show` 对比 `started_at`；或 `diagnostics` 列出活跃诊断项 | 可恢复 → `reclaim` 后重派；不可恢复 → `block --kind needs_input "需人工介入：XXX"` |

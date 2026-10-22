@@ -18,6 +18,7 @@
      running 但 PID 已死（lane 断头）、running 且 PID 活着但日志超阈值无更新（疑似卡死）
   3. hermes kanban diagnostics --json —— 活跃诊断项（孤儿 claim_lock、blocked 超期等），
      每项输出一行 DIAG_ACTIVE <task_id>；处置规程见 kanban-executor「超时与孤儿回收」
+  4. 哨兵活性（P3B 新增）—— logs/sentinel_state.json 的 mtime 判哨兵僵死（SENTINEL_DEAD）
 
 用法：
     python kanban-watchdog.py [--board <slug>]
@@ -33,6 +34,7 @@ from pathlib import Path
 # ── 阈值（秒），可用环境变量覆盖 ──────────────────────────────
 IN_PROGRESS_TIMEOUT = int(os.environ.get("KANBAN_WATCHDOG_TIMEOUT", 8 * 3600))
 LANE_LOG_STALE = int(os.environ.get("KANBAN_WATCHDOG_LANE_STALE", 2 * 3600))
+SENTINEL_DEAD_SECONDS = int(os.environ.get("WF_SENTINEL_DEAD_SECONDS", 900))
 
 TERMINAL_STATUSES = {"done", "archived", "cancelled"}
 
@@ -40,6 +42,20 @@ BRIDGE_TASK_BASE = Path(
     os.environ.get(
         "AGENT_BRIDGE_TASK_BASE",
         Path.home() / ".workbuddy" / "agent-bridge" / "tasks",
+    )
+)
+
+# 哨兵工人的 assignee 前缀（P3B 新增）。卡必须是 cc-<角色> 才归 cc- 哨兵管；
+# 真实 Hermes profile 名的卡会被网关内置 dispatcher 抢走（profile_exists 为真
+# → spawn Hermes worker），与 cc- 哨兵双跑同一张卡、双写同一批文件。
+WF_AGENT_PREFIX = os.environ.get("WF_AGENT_PREFIX", "cc-")
+
+# 哨兵状态文件（P3B 新增）。sentinel_tick.py 每 tick touch 它；
+# watchdog 按 mtime 判哨兵是否还活着。测试用 WF_STATE_FILE 指到临时目录。
+SENTINEL_STATE_FILE = Path(
+    os.environ.get(
+        "WF_STATE_FILE",
+        Path(__file__).resolve().parent.parent / "logs" / "sentinel_state.json",
     )
 )
 
@@ -103,12 +119,40 @@ def board_lines(board: str | None) -> list[str]:
     now = time.time()
     lines: list[str] = []
     counts: dict[str, int] = {}
+    # P3B 新增：真实 Hermes profile 名单（防 assignee 漂移判据三）。best-effort：
+    # 取不到（旧版本无子命令 / 网关没跑）只按前两条判，失败不许报 ERROR。
+    real_profiles: set[str] = set()
+    try:
+        assignees_out = subprocess.run(
+            [find_hermes(), "kanban", "assignees", "--json"],
+            capture_output=True, text=True, timeout=60,
+        )
+        if assignees_out.returncode == 0:
+            for a in json.loads(assignees_out.stdout):
+                if a.get("name") and a.get("on_disk"):
+                    real_profiles.add(a["name"])
+        # 空 on_disk 名单 = 本机无真实 profile，判据三自然全不命中，无需特判
+    except (subprocess.TimeoutExpired, OSError, json.JSONDecodeError):
+        real_profiles = set()  # best-effort：不报 WATCHDOG_ERROR，不误报
     for t in tasks:
         status = t.get("status") or "unknown"
         counts[status] = counts.get(status, 0) + 1
         tid = t.get("id", "?")
         if status == "ready" and not t.get("assignee"):
             lines.append(f"CLAIM_PENDING {tid}")
+        if status == "ready":
+            # P3B 新增 ASSIGNEE_DRIFT（与上面 CLAIM_PENDING 有意并存，同一张卡可两行）：
+            # CLAIM_PENDING 说"没人认领"，ASSIGNEE_DRIFT 说"有被网关抢单风险"，
+            # 语义不同、处置不同（前者补派 lane，后者立即改 assignee）。
+            # 命中：assignee 为空 / 不以 cc- 开头 / 是真实 Hermes profile 名。
+            assignee = t.get("assignee") or ""
+            drift = (
+                not assignee
+                or not assignee.startswith(WF_AGENT_PREFIX)
+                or assignee in real_profiles
+            )
+            if drift:
+                lines.append(f"ASSIGNEE_DRIFT {tid} {assignee or 'empty'}")
         elif status == "running" and t.get("started_at"):
             if now - t["started_at"] > IN_PROGRESS_TIMEOUT:
                 lines.append(f"IN_PROGRESS_TIMEOUT {tid}")
@@ -187,6 +231,23 @@ def diagnostics_lines(board: str | None) -> list[str]:
     return lines
 
 
+def sentinel_dead_lines() -> list[str]:
+    """P3B 新增：哨兵僵死探测（cron 没 tick / 脚本崩 / 主机休眠 —— 卡挂着没人派
+    且没人知道，历史事故：卡挂 20 小时真因主机休眠）。按 sentinel_state.json 的
+    mtime 判，sentinel_tick.py 每 tick touch 它。"""
+    sf = SENTINEL_STATE_FILE
+    if not sf.is_file():
+        # 首次部署会先出现一次，属正常：跑一次 sentinel_tick.py 后消失
+        return ["SENTINEL_DEAD no-state"]
+    age = time.time() - sf.stat().st_mtime
+    if age > SENTINEL_DEAD_SECONDS:
+        # monitor 契约要求输出确定性（不含时间戳）——但这里的年龄数值正是
+        # 指纹本身（新鲜→无行，僵死→age= 行），僵死/恢复两个态之间指纹必变，
+        # 不会造成每轮重复唤醒，故此处允许数值。
+        return [f"SENTINEL_DEAD age={int(age)}s"]
+    return []  # 哨兵活着：不输出任何行
+
+
 def main() -> int:
     board = None
     args = sys.argv[1:]
@@ -195,7 +256,12 @@ def main() -> int:
         if i + 1 < len(args):
             board = args[i + 1]
     try:
-        out = board_lines(board) + bridge_lines() + diagnostics_lines(board)
+        out = (
+            board_lines(board)
+            + bridge_lines()
+            + diagnostics_lines(board)
+            + sentinel_dead_lines()  # P3B 新增：与 bridge_lines 同级
+        )
     except Exception as e:  # noqa: BLE001 — watchdog 永不崩，异常即信号
         out = [f"WATCHDOG_ERROR {type(e).__name__}"]
     print("\n".join(sorted(set(out))))
