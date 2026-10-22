@@ -243,7 +243,11 @@ EOF
   if [[ "$worker_rc" -ne 0 ]]; then
     "$WF_HERMES" kanban --board "$BOARD" block "$task_id" \
       "lane($agent_name) 失败 exit=$worker_rc，详见 worker 日志" >/dev/null 2>&1 || true
-    log "worker 失败（exit=$worker_rc），卡已 block"
+    # claim 释放（best-effort）：block 只改状态不摘 claim_lock，锁挂着的话
+    # 下轮哨兵命中"已 claim"静默跳过——盲区（T-KIT-P3A bug2）。实测 block
+    # 后 reclaim 不会把卡顶回 ready，熔断语义保得住。
+    "$WF_HERMES" kanban --board "$BOARD" reclaim "$task_id" >/dev/null 2>&1 || true
+    log "worker 失败（exit=$worker_rc），卡已 block，已尝试释放 claim"
     return "$worker_rc"
   fi
 
@@ -277,11 +281,14 @@ EOF
       # 快照对比写进评论，格式 <HEAD>\t<指纹>，供人工复核 git 历史
       "$WF_HERMES" kanban --board "$BOARD" block "$task_id" \
         "⚠️ 产出校验未通过（疑似假 done）：$verdict_out" >/dev/null 2>&1 || true
+      # claim 释放（best-effort）：同上，防 claim_lock 挂着堵住哨兵下轮判定；
+      # 实测 block 后 reclaim 不回摆 ready，block 语义保得住（T-KIT-P3A bug2）。
+      "$WF_HERMES" kanban --board "$BOARD" reclaim "$task_id" >/dev/null 2>&1 || true
       "$WF_HERMES" kanban --board "$BOARD" comment "$task_id" \
         "产出校验说明：$verdict_out
 派单前快照：$snap_before
 收尾时快照：$snap_after" >/dev/null 2>&1 || true
-      err "产出校验未通过（EMPTY），卡已 block：$verdict_out"
+      err "产出校验未通过（EMPTY），卡已 block，已尝试释放 claim：$verdict_out"
       return 1
       ;;
     2)  # skip：验证型卡 / 非 git / 显式跳过

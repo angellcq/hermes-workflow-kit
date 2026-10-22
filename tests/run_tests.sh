@@ -161,6 +161,26 @@ else
   bad "守卫测试失败（rc=$GT_RC，通过断言 $GUARD_PASS 个）"
 fi
 
+# ── 容错注册块：独立场景测试脚本逐个注册（T-KIT-P3A §2.4）──
+# 别的分支会并行新增测试文件，此处按文件存在性容错：不在就跳过，
+# 不硬编码。失败则总退出码非 0。
+echo "══ [11/11] 独立场景测试注册块 ══"
+for f in tests/test_sentinel.sh tests/test_watchdog_signals.sh; do
+  if [[ ! -f "$f" ]]; then
+    echo "  (跳过：$f 不存在)"
+    continue
+  fi
+  SC_OUT=$(bash "$f" 2>&1)
+  SC_RC=$?
+  SC_PASS=$(echo "$SC_OUT" | sed -n 's/.*═══ 结果：\([0-9]*\) 通过.*/\1/p' | tail -1)
+  if [[ "$SC_RC" -eq 0 && "${SC_PASS:-0}" -ge 1 ]]; then
+    ok "$(basename "$f")（$SC_PASS 断言通过）"
+  else
+    echo "$SC_OUT" | tail -20
+    bad "$(basename "$f") 失败（rc=$SC_RC，通过断言 ${SC_PASS:-0} 个）"
+  fi
+done
+
 echo ""
 echo "═══ 结果：$PASS 通过 / $FAIL 失败 ═══"
 [[ "$FAIL" -eq 0 ]] && exit 0 || exit 1
