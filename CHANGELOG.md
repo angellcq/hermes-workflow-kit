@@ -4,6 +4,25 @@
 
 ---
 
+## v5.0-P9（2026-10-23）— 部署后能力验收脚本
+
+- 新增 `scripts/verify-deploy.sh`：部署后一条命令跑完 V1..V10（`--smoke` 追加 V11 端到端冒烟）——
+  仓库自检、bootstrap 接线 `FAIL=0`、11 个 `cc-*.md` 角色、全局件 md5 + `kanban-executor` version 一致、
+  项目 `.hermes/` 资产（五目录 + 制度层 + USAGE + 角色库 11/deprecated 5）、板名一致、看板存在、
+  哨兵 cron、哨兵真跑 rc=0（tick.log 末行）、watchdog 无 `SENTINEL_DEAD`；每条 FAIL 带可粘贴修法，
+  末尾 `═══ 验收：N 通过 / M 失败 ══`，有 FAIL 退 1。支持 `HERMES_BIN`/`CC_AGENTS_DIR`/`HERMES_HOME`
+  测试钩子（与 bootstrap-machine.sh 同款约定）
+- `--smoke`：在板上建 `[SMOKE]` 卡（assignee `cc-backend-developer`）→ 跑一轮哨兵 → 断言
+  `total_ready` ≥ 1 → `hermes kanban archive` 归档；EXIT trap 保证无论成败都清理
+- 新增 `tests/test_verify_deploy.sh`（5 条断言，临时 HERMES_HOME + 假 hermes + 伪资产，绝不碰真实环境），
+  注册进 `tests/run_tests.sh` 容错注册块
+- 文档接线：`DEPLOY.md` §八换机检查单第 7 步改为统一跑 verify-deploy.sh（原手工核对项保留为
+  「脚本不过时怎么手工查」对照表）、`USAGE.md` §六加「部署后验收：一条命令」、
+  `skills/hermes-workflow-deploy/SKILL.md` §3 验收四件套改为先跑脚本再按 §4 对照表修、README 目录表补一行
+- 来源：方案 `EVOLUTION_v5.0_方案.md` P9（部署后能力验收）
+
+---
+
 ## v5.0-P8（2026-10-23）— 部署/更新技能入库并改写成 agent runbook
 
 - `skills/hermes-workflow-deploy/`（2.0.0，重写）：从全局 profile 收进仓库并改写成 agent 可直接执行的

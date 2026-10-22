@@ -159,7 +159,8 @@ PROJ/
 ## 八、换机检查单（新机器从零到哨兵跑通）
 
 按顺序 7 步，每步一条可粘贴命令 + 期望输出。前 4 步交给 `scripts/bootstrap-machine.sh`，
-第 5 步必须手工建（bootstrap 不管巡检 cron）。
+第 5 步必须手工建（bootstrap 不管巡检 cron）；第 7 步起由 `scripts/verify-deploy.sh`
+统一验收（原第 6/7 步的手动哨兵/watchdog 核对已并入验收项 V9/V10）。
 
 ```bash
 # ── 1. 拉代码 + 回归防线 ──
@@ -187,9 +188,28 @@ hermes cron create "every 15m" \
 python "$HERMES_HOME/scripts/sentinel-<板>.sh"
 # 期望：项目 logs/tick.log 出现 rc=0 dispatched=0 skipped=0 total_ready=N
 
-# ── 7. watchdog 自检，确认哨兵心跳被认 ──
-python "$HERMES_HOME/scripts/kanban-watchdog.py" --board <板>
-# 期望：输出里不得出现 SENTINEL_DEAD（出现 no-state 说明第 6 步没做或失败）
+# ── 7. 统一验收：V1..V10 一条命令跑完（v5.0-P9 起）──
+bash scripts/verify-deploy.sh --project <项目根> --board <板>
+# 期望：═══ 验收：N 通过 / 0 失败 ══（有 FAIL 退 1，每条 FAIL 带可粘贴修法）
+# 首台机器可加 --smoke：追加 V11 端到端冒烟（建 [SMOKE] 卡 → tick → 断言派单链路 → 归档清理）
 ```
 
 随时复查接线：`bash scripts/bootstrap-machine.sh --check`。
+
+### 脚本不过时怎么手工查
+
+verify-deploy.sh 逐项 FAIL 时，第 7 步各项对应的手工命令对照表：
+
+| 验收项 | 手工命令 | 期望 |
+|--------|---------|------|
+| V1 仓库自检 | `bash tests/run_tests.sh` | `═══ 结果：N 通过 / 0 失败 ═══` |
+| V2 接线自检 | `bash scripts/bootstrap-machine.sh --project <项目根> --board <板>` | `检查结果：OK=x WARN=y FAIL=0` |
+| V3 角色已装 | `ls ~/.claude/agents/cc-*.md \| wc -l` | `11` |
+| V4 全局件一致 | `md5sum "$HERMES_HOME/scripts/kanban-watchdog.py" scripts/kanban-watchdog.py`<br>`grep '^version:' "$HERMES_HOME/skills/devops/kanban-executor/SKILL.md" skills/kanban-executor/SKILL.md` | md5 相同；version 相同 |
+| V5 项目资产齐 | `ls <项目根>/.hermes/` | 五目录 + `Hermes制度层.md` + `USAGE.md`；`通用角色库/*.md`=11、`deprecated/*.md`=5 |
+| V6 板名一致 | `grep '^WF_BOARD=' <项目根>/.hermes/config/wf.env` | 与 `--board` 相同 |
+| V7 看板存在 | `hermes kanban boards` | 输出含 `<板>` |
+| V8 哨兵 cron 存在 | `hermes cron list` | 输出含 `sentinel-<板>` |
+| V9 哨兵真能跑 | `bash "$HERMES_HOME/scripts/sentinel-<板>.sh"` 后 `tail -1 <项目根>/logs/tick.log` | 末行含 `rc=0` |
+| V10 无死亡误报 | `python "$HERMES_HOME/scripts/kanban-watchdog.py" --board <板>` | 无 `SENTINEL_DEAD` |
+| V11 冒烟（`--smoke`） | `hermes kanban --board <板> create "[SMOKE] test" --assignee cc-backend-developer` 后手动 tick 一轮 | tick.log `total_ready` ≥ 1；验完 `hermes kanban archive <id>` |

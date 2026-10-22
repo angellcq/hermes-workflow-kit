@@ -81,14 +81,25 @@ bash "$K"/bootstrap-machine.sh --project <项目根> --board <板名> --apply  #
    schedule 是第一个位置参数；`--script` 只认 `$HERMES_HOME/scripts/` 下的文件名、`--no-agent` 不烧 token
    （§1 第 3 条）。`unrecognized arguments: --every` = 写法退化了（§4）。
 
-## §3 收尾验收四件套（缺一个都不算部署完成）
+## §3 验收：先跑 verify-deploy.sh（v5.0-P9 起，一条命令替代原四件套）
 
-1. `bash tests/run_tests.sh` 全绿（≥25 断言）。
-2. 看板 slug 与 `wf.env` 的 `WF_BOARD` 一致：`hermes kanban list` 对照 `cat <项目根>/.hermes/config/wf.env`。
-3. 手动跑一次哨兵：`python "$HERMES_HOME/scripts/sentinel_tick.py" --project <项目根>`，
-   然后看项目 `logs/tick.log` 出现 `rc=0 ... total_ready=N`（N ≥ 0，关键是 rc=0 且有输出）。
-4. `python "$HERMES_HOME/scripts/kanban-watchdog.py" --board <板>` 输出里**没有** `SENTINEL_DEAD`。
-   若有 `SENTINEL_DEAD no-state` → 哨兵没跑过或包装壳没补全局心跳（§1 第 4 条、§4 第 2 行）。
+```bash
+bash <kit根>/scripts/verify-deploy.sh --project <项目根> --board <板名>
+```
+
+- **退出码**：0 = 验收全过；1 = 有 FAIL 项（每条 `✗ Vn ... —— 修法：<可粘贴命令>`，逐条修完重跑）。
+- 覆盖原来的验收四件套：V1 仓库自检（`tests/run_tests.sh` 0 失败）、V2 `bootstrap-machine.sh`
+  探测 `FAIL=0`、V3 `~/.claude/agents/cc-*.md` = 11、V4 全局件 md5 + `kanban-executor` version 一致、
+  V5 项目 `.hermes/` 资产齐、V6 板名一致、V7 看板存在、V8 哨兵 cron、V9 哨兵真跑（rc=0）、
+  V10 watchdog 无 `SENTINEL_DEAD`。
+- 仅 `tests/run_tests.sh` 太慢时可加 `--skip-repo-tests`（V1 标 SKIP，不算失败）；
+  首台机器可加 `--smoke` 做端到端冒烟（建 `[SMOKE]` 卡 → tick → `total_ready` ≥ 1 → 自动归档）。
+- **流程**：先跑本脚本；对 FAIL 项再按下表（§4 对照表）修，修完重跑到 `0 失败` 才算部署完成。
+  某项要手工复核时，命令对照表见仓库 `DEPLOY.md` §八「脚本不过时怎么手工查」。
+- 原四件套手工步骤（备查）：`bash tests/run_tests.sh` 全绿；`wf.env` 的 `WF_BOARD` 与看板 slug 一致；
+  手动跑 `python "$HERMES_HOME/scripts/sentinel_tick.py" --project <项目根>` 后 `logs/tick.log` 出现
+  `rc=0 ... total_ready=N`；`python "$HERMES_HOME/scripts/kanban-watchdog.py" --board <板>` 无
+  `SENTINEL_DEAD`（有则哨兵没跑过或包装壳没补全局心跳，§1 第 4 条）。
 
 ## §4 换机常见失败对照表（症状 → 真因 → 修法）
 

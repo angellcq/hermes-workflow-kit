@@ -67,6 +67,7 @@ bash tests/run_tests.sh
 | `scripts/sentinel_tick.py` | 哨兵 tick 入口：跑一轮哨兵扫描并 touch `logs/sentinel_state.json`（watchdog 按其 mtime 判哨兵僵死） | 哨兵心跳落盘 |
 | `scripts/install-claude-agents.sh` | 把 `通用角色库/*.md` 装成 CC subagent 到 `~/.claude/agents/cc-*.md`（幂等、`--dry-run`/`--dir`/`--prefix`/`--only`，改写 frontmatter `name` 使其与文件名一致） | 角色原生加载（`claude -p --agent`，派单器按存在性自动接线） |
 | `scripts/bootstrap-machine.sh` | 探测本机（python/hermes CLI/agents 目录/cron 接线）并幂等落地 wf.env、11 角色、全局件、看板、哨兵 cron；默认只探测（`--apply` 才落盘，`--with-cron` 才建 cron，`--check` 全局自检） | 换机一键部署 |
+| `scripts/verify-deploy.sh` | 部署后能力验收：V1..V10 逐项核对（仓库自检/接线/角色/全局件/资产/板名/看板/cron/哨兵/watchdog，`--smoke` 追加端到端冒烟），FAIL 全带可粘贴修法 | 部署验收唯一入口 |
 | `config/` | projects.yaml / languages.yaml / stale-patterns.txt / wf.env.example | **项目注册表与语言清单唯一源**（wf.env.example=派单器配置样例） |
 | `tests/` | 最小测试集（run_tests.sh + test_pipeline.py） | 回归防线 |
 | `DEPLOY.md` | 部署 SOP | — |

@@ -114,6 +114,19 @@ hermes kanban --board <板> create "<标题>" --assignee cc-backend-developer --
 验收（git diff 核对 + 编译/测试复跑）仍然是人/主会话的活。熔断（连续 3 次失败）会把卡 block 成
 `needs_input`，等人工介入。
 
+### 部署后验收：一条命令
+
+部署/换机装完后，别逐条手工核对，直接：
+
+```bash
+bash scripts/verify-deploy.sh --project <项目根> --board <板>
+```
+
+V1..V10 逐项验收（仓库自检 / bootstrap 接线 / 11 个 cc- 角色 / 全局件 md5 / 项目资产 /
+板名一致 / 看板 / cron / 哨兵真跑 rc=0 / watchdog 无 `SENTINEL_DEAD`），末尾
+`═══ 验收：N 通过 / M 失败 ══`，每条 FAIL 带可粘贴修法；首台机器可加 `--smoke` 做
+端到端冒烟（建 `[SMOKE]` 卡 → tick → 自动归档）。各项的手工对照命令见 `DEPLOY.md` §八。
+
 ## 七、注意事项
 
 - **模板铁律不变**：先读后写、按节填写、`【】` 占位符清零、`>💡` 指引定稿删除
