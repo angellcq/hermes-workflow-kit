@@ -26,7 +26,31 @@
 
 > 不部署（套件自身元文档/自测）：`README.md`、`DEPLOY.md`、`LICENSE`、`tests/`、`.git*`。
 
-## 三、部署步骤
+## 三、部署前置检查
+
+部署前跑这四条命令，每条都有明确的判定标准：
+
+```bash
+claude --version                                   # 必须 ≥ 2.1.300（--agent 支持）
+ls ~/.claude/agents/ | wc -l                       # 记录数量基线；装完再数一次应变大
+echo $CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS         # 期望 1（agent teams 开关）
+test -f "$PROJ/.claude/settings.json" && echo ok   # 项目级 settings 存在
+```
+
+- **`claude --version`**：低于 2.1.300 时 `--agent` 不认，角色装上也调不到。
+- **`ls ~/.claude/agents/ | wc -l`**：agents 目录常被别的套件塞满（本机实测 187 个，裸名已被占），所以本套件装角色一律加前缀（默认 `cc-`，装到 `~/.claude/agents/cc-<name>.md`）。基线数字用于装完对比——应增加 16（角色库数量）。
+- **`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`**：只影响 agent teams 功能，不影响 `--agent` 单 agent 加载；期望为 1 但缺失时不阻塞部署。
+- **`.claude/settings.json`**：项目级 settings 缺失会导致权限模式不可控（CC 子 agent 写文件在多数权限模式下会被弹窗卡死）。
+
+角色安装（替代已废弃的 `sync-roles-to-profiles.sh`）：
+
+```bash
+bash "$SRC/scripts/install-claude-agents.sh"          # 装到 ~/.claude/agents/cc-*.md
+# 加载：claude -p --agent cc-<name>
+# ⚠ 不要用 Agent 工具派发角色（写文件会被权限弹窗卡死，四种权限模式实测全失败）
+```
+
+## 四、部署步骤
 
 ```bash
 SRC="F:/Gitee.com/hermes-workflow-kit"

@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# ⚠ DEPRECATED（v5.0-P4）：本脚本把角色装成 Hermes profile —— 方向错误。角色是 Claude Code subagent，
+# 应装到 ~/.claude/agents/（见 scripts/install-claude-agents.sh）。装成 profile 会让 kanban 的
+# profile_exists 闸门对这些名字变真，网关 dispatcher 会抢单把卡 spawn 成 Hermes worker。
+# 本脚本保留 3 个版本周期后删除，期间只做兼容维护。
+#
 # Hermes Sync Roles to Profiles — 通用角色库 → Hermes profiles 同步脚本
 # 把 .hermes/通用角色库/*.md 一键同步为 Hermes profiles
 #
@@ -43,6 +48,9 @@ NC='\033[0m'
 
 log()  { echo -e "${GREEN}[sync]${NC} $*"; }
 warn() { echo -e "${YELLOW}[sync]${NC} ⚠ $*"; }
+
+# 运行时废弃提示：只提示，不改行为（保留 3 个版本周期后删除）
+warn "DEPRECATED（v5.0-P4）：改用 install-claude-agents.sh —— 角色是 Claude Code subagent，不是 Hermes profile"
 
 # 检查 Claude Code 角色目录
 if [[ ! -d "$CLAUDE_AGENTS_DIR" ]]; then
