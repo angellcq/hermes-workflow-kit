@@ -128,8 +128,15 @@ def load_stale_patterns() -> list[str]:
 def iter_repo_files():
     for p in ROOT.rglob("*"):
         # .git / .deploy-backup（部署备份是旧快照，不是活资产）/ .test-tmp（测试工作区）不参与引用检查
-        if p.suffix in (".md", ".sh", ".py") and not {".git", ".deploy-backup", ".test-tmp"} & set(p.parts):
-            yield p
+        if p.suffix not in (".md", ".sh", ".py"):
+            continue
+        if {".git", ".deploy-backup", ".test-tmp", "plans"} & set(p.parts):
+            continue
+        # 方案/规划类文档（EVOLUTION_*/PLAN_*）会前向引用"尚未交付的产物路径"，
+        # 那是待办清单而不是失效引用 → 不参与断链检查。产物落地后由代码/模板自身被检查。
+        if p.name.startswith(("EVOLUTION_", "PLAN_")):
+            continue
+        yield p
 
 
 def strip_deploy_paths(line: str) -> str:
