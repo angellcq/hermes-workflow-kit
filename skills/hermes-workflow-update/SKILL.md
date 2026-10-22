@@ -109,7 +109,7 @@ metadata:
    K=<kit根>/scripts
    bash "$K"/bootstrap-machine.sh --check --project <项目根> --board <板名>
    ```
-   确认 v5.0 接线没断：角色 11 个 `cc-*.md`、`wf.env` 与看板 slug 一致、哨兵心跳正常（详见 `hermes-workflow-deploy` §0/§3）。若本次更新连带重挂哨兵 cron（需拍板类），用 `hermes cron create sentinel-<板> "every 15m" --script sentinel-wrapper.sh`，schedule 是位置参数。输出有 FAIL → 按 deploy 技能 §0 对照表修完再收工；这一步跳过 = 「更新成功」但哨兵永远不会派单（`total_ready=0`）。
+   确认 v5.0 接线没断：角色 11 个 `cc-*.md`、`wf.env` 与看板 slug 一致、哨兵心跳正常（详见 `hermes-workflow-deploy` §0/§3）。若本次更新连带重挂哨兵 cron（需拍板类），用 `hermes cron create "every 5m" --no-agent --name sentinel-<板> --script sentinel-<板>.sh --deliver local`——schedule 是第一个位置参数，job 名走 `--name`；`--script` 只认 `$HERMES_HOME/scripts/` 下的文件名（包装壳必须先放进去），`--no-agent` 纯脚本不烧 token。输出有 FAIL → 按 deploy 技能 §0 对照表修完再收工；这一步跳过 = 「更新成功」但哨兵永远不会派单（`total_ready=0`）。
 
 7. **全局件同步（只在用户明确同意后做，属核心原则 4 第②类）**。顺序固定，不可跳步：
 

@@ -26,7 +26,7 @@ bash "$K"/bootstrap-machine.sh --project <项目根> --board <板名> --apply  #
 | FAIL | 修法 |
 |---|---|
 | claude 版本过低 | 安装/升级 Claude Code 到 ≥ 2.1.300（见 §1 第 1 条） |
-| `~/.claude/agents/` 角色缺失 | `cd <kit>/通用角色库 && cp cc-*.md ~/.claude/agents/`（见 §2 第 2 步） |
+| `~/.claude/agents/` 角色缺失 | `bash scripts/install-claude-agents.sh`（见 §2 第 2 步） |
 | `wf.env` 缺失/字段缺 | 按 §2 第 5 步写 `wf.env` |
 | 看板不存在或 slug 不对 | 按 §2 第 4 步建板，slug 必须等于 `WF_BOARD` |
 | 哨兵 cron 缺 | `--apply` 后加 `--with-cron`（见 §2 第 6 步） |
@@ -36,9 +36,12 @@ bash "$K"/bootstrap-machine.sh --project <项目根> --board <板名> --apply  #
 1. **`claude --version` ≥ 2.1.300**，否则 `claude --agent` 不认子代理。验证：`claude --version`，低于阈值先升级再继续，装了角色也白装。
 2. **`~/.claude/agents/` 里应有 11 个 `cc-*.md`**（不是 16——5 个 C 级角色已移入 `deprecated/`，不再装成 agent）。
    验证：`ls ~/.claude/agents/cc-*.md | wc -l`，必须等于 **11**；多出来的顶层副本是陈旧文件，删掉。
-3. **`hermes cron create` 的 schedule 是位置参数**（没有 `--every` 这种 flag），且 `--script` **只认
-   `$HERMES_HOME/scripts/` 下的文件名** → 哨兵脚本必须先拷进 `$HERMES_HOME/scripts/`，再用包装壳挂 cron。
-   写法：`hermes cron create sentinel-<板> "every 15m" --script sentinel-wrapper.sh ...`（`every 15m` 直接跟在名字后面）。
+3. **`hermes cron create` 的 schedule 是第一个位置参数**（没有 `--every` 这种 flag），job 名用 `--name`，
+   `--script` **只认 `$HERMES_HOME/scripts/` 下的文件名**（不收路径）→ 哨兵包装壳必须先拷进
+   `$HERMES_HOME/scripts/`，再挂 cron。
+   写法：`hermes cron create "every 5m" --no-agent --name sentinel-<板> --script sentinel-<板>.sh --deliver local`。
+   `--no-agent` 表示纯脚本执行、不拉 agent 不烧 token；把 job 名写在 schedule 位置会把 `sentinel-<板>`
+   当 schedule 解析、直接报错。
 4. **全局 watchdog 看的是 `$HERMES_HOME/logs/sentinel_state.json`，哨兵状态写在项目 `logs/`**
    → 包装壳必须在 tick 成功后补 touch 一份全局心跳，否则每轮误报 `SENTINEL_DEAD no-state`。
    验证：`ls "$HERMES_HOME/logs/sentinel_state.json"` 存在且 mtime 在最近一个周期内。
@@ -55,9 +58,12 @@ bash "$K"/bootstrap-machine.sh --project <项目根> --board <板名> --apply  #
    角色数不是 11 → 顶层残留旧副本没删干净，用 `--prune` 重跑或按 `diff -rq` 的 `Only in` 逐个 `rm -f`（**逐文件，不整目录 rm -rf**——整目录删会被安全层拦）。
 2. **装角色**（CC agent，不是 Hermes profile）：
    ```bash
-   cd <kit>/通用角色库 && cp cc-*.md ~/.claude/agents/
+   bash scripts/install-claude-agents.sh --dry-run   # 先看将要做什么
+   bash scripts/install-claude-agents.sh             # 加 cc- 前缀、改写 frontmatter name、幂等
    ls ~/.claude/agents/cc-*.md | wc -l   # 期望 11
    ```
+   角色库源文件是裸名（`backend-developer.md` 等，无 `cc-` 前缀），**不能用 `cp` 直装**——CC 按
+   frontmatter `name:` 匹配 agent，直接 cp 过去 `claude --agent cc-<角色>` 必报找不到。
    失败症状：`claude --agent <角色>` 报找不到 agent → 角色没装或 claude 版本 < 2.1.300（§1 第 1 条）。
 3. **拷全局件**（watchdog + 技能副本，都在 `$HERMES_HOME` 下）：
    ```bash
@@ -70,9 +76,10 @@ bash "$K"/bootstrap-machine.sh --project <项目根> --board <板名> --apply  #
 5. **写/校 `wf.env`**：项目 `.hermes/config/wf.env`，字段与看板 slug 对齐；改完 `cat` 一遍核对。
 6. **可选挂哨兵 cron**（`--with-cron` 时）：先确保包装壳在 `$HERMES_HOME/scripts/`（第 3 步），再：
    ```bash
-   hermes cron create sentinel-<板> "every 15m" --script sentinel-wrapper.sh
+   hermes cron create "every 5m" --no-agent --name sentinel-<板> --script sentinel-<板>.sh --deliver local
    ```
-   schedule 是位置参数；`unrecognized arguments: --every` = 写法退化了（§4）。
+   schedule 是第一个位置参数；`--script` 只认 `$HERMES_HOME/scripts/` 下的文件名、`--no-agent` 不烧 token
+   （§1 第 3 条）。`unrecognized arguments: --every` = 写法退化了（§4）。
 
 ## §3 收尾验收四件套（缺一个都不算部署完成）
 
@@ -89,8 +96,8 @@ bash "$K"/bootstrap-machine.sh --project <项目根> --board <板名> --apply  #
 |---|---|---|
 | `total_ready=0` 永远为 0 | 板名不一致（看板 slug ≠ `WF_BOARD`）或 assignee 无 `cc-` 前缀 | 对齐 slug 与 `wf.env`；卡片的 assignee 改成 `cc-*` 角色名（`~/.claude/agents/` 里 11 个之一） |
 | `SENTINEL_DEAD no-state` | 哨兵没跑过一次，或包装壳 tick 成功后没补 touch `$HERMES_HOME/logs/sentinel_state.json` 全局心跳 | 先手动跑一次 `sentinel_tick.py`（§3 第 3 条）；检查包装壳是否补了全局心跳（§1 第 4 条） |
-| `claude --agent` 报错 | 角色没装进 `~/.claude/agents/`，或 claude 版本 < 2.1.300 | `cp cc-*.md ~/.claude/agents/`（§2 第 2 步）；`claude --version` 升级（§1 第 1 条） |
-| `cron create` 报 `unrecognized arguments: --every` | schedule 是位置参数，不是 flag | `hermes cron create <名字> "every 15m" --script ...`，`every 15m` 直接写（§1 第 3 条） |
+| `claude --agent` 报错 | 角色没装进 `~/.claude/agents/`，或 claude 版本 < 2.1.300 | `bash scripts/install-claude-agents.sh`（§2 第 2 步）；`claude --version` 升级（§1 第 1 条） |
+| `cron create` 报 `unrecognized arguments: --every`（或把名字当 schedule） | schedule 是第一个位置参数，job 名用 `--name`，不是第九个 flag | `hermes cron create "every 5m" --no-agent --name sentinel-<板> --script sentinel-<板>.sh --deliver local`（§1 第 3 条） |
 | `cannot change to '/c/...'` | 给原生程序传了 MSYS 路径 | 改写 `C:/x/y` 盘符正斜杠（§1 第 5 条） |
 
 ## §5 回滚
