@@ -27,7 +27,7 @@
 3. 判定器异常退出（非 0/1/2）必须由调用方显式降级（dispatch-lane.sh 守卫⑥
    的"非 0/1/2 → 视为 skip 但评论写明异常"分支），不许静默 fail-open。
 
-判定顺序（不可换，见 verdict 的实现与 TASK.md §2.2 表格）：
+判定顺序（不可换，见 verdict 的实现与任务书的 §2.2 表格）：
 
     1. SKIP_PRODUCE_CHECK=1                          → skip(2)
     2. 项目目录不是 git 仓库                          → skip(2)
