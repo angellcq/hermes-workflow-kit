@@ -62,6 +62,7 @@ bash tests/run_tests.sh
 | `scripts/` | agent-bridge.sh / dispatch-lane.sh / card-sentinel.py / sentinel_tick.py / card_check.py / wf_common.py / pipeline.py / check-references.py 等 | 可执行工具 |
 | `scripts/card-sentinel.py` | 哨兵本体：定时扫板，把 `cc-` 前缀 ready 卡交给 `dispatch-lane.sh` 派发（promote/reclaim/并发熔断都在这） | cc- 卡唯一派单者 |
 | `scripts/sentinel_tick.py` | 哨兵 tick 入口：跑一轮哨兵扫描并 touch `logs/sentinel_state.json`（watchdog 按其 mtime 判哨兵僵死） | 哨兵心跳落盘 |
+| `scripts/install-claude-agents.sh` | 把 `通用角色库/*.md` 装成 CC subagent 到 `~/.claude/agents/cc-*.md`（幂等、`--dry-run`/`--dir`/`--prefix`/`--only`，改写 frontmatter `name` 使其与文件名一致） | 角色原生加载（`claude -p --agent`） |
 | `config/` | projects.yaml / languages.yaml / stale-patterns.txt / wf.env.example | **项目注册表与语言清单唯一源**（wf.env.example=派单器配置样例） |
 | `tests/` | 最小测试集（run_tests.sh + test_pipeline.py） | 回归防线 |
 | `DEPLOY.md` | 部署 SOP | — |

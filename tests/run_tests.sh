@@ -44,10 +44,10 @@ fi
 echo "══ [3/10] 角色动态加载冒烟 ══"
 ROLES_OUT=$(CLAUDE_AGENTS_DIR="通用角色库" bash scripts/agent-bridge.sh roles 2>/dev/null)
 COUNT=$(echo "$ROLES_OUT" | grep -cE '^[a-z][a-z-]+[[:space:]]')
-if [[ "$COUNT" -eq 16 ]]; then
-  ok "角色库加载 16 个（仓库通用角色库）"
+if [[ "$COUNT" -eq 11 ]]; then
+  ok "角色库加载 11 个（通用角色库，deprecated/ 不计）"
 else
-  bad "预期 16 个角色，实际 $COUNT"
+  bad "预期 11 个角色（v5.0 起 5 个 C 级移入 deprecated/），实际 $COUNT"
 fi
 # 块格式 description 兼容（临时目录构造 description: | 样例）
 TD="$ROOT/.test-tmp"; mkdir -p "$TD"
@@ -133,7 +133,7 @@ rm -f "$TP2/pyproject.toml"; rmdir "$TP2" 2>/dev/null; rmdir "$ROOT/.test-tmp" 2
 echo "══ [9/10] agent-bridge --json 输出契约 ══"
 ROLES_JSON=$(CLAUDE_AGENTS_DIR="通用角色库" bash scripts/agent-bridge.sh roles --json 2>/dev/null)
 if echo "$ROLES_JSON" | grep -q '"name": "backend-developer"' && echo "$ROLES_JSON" | grep -q '"description"'; then
-  ok "roles --json（16 角色 JSON 数组）"
+  ok "roles --json（11 角色 JSON 数组）"
 else
   bad "roles --json 输出异常"
 fi
@@ -165,7 +165,7 @@ fi
 # 别的分支会并行新增测试文件，此处按文件存在性容错：不在就跳过，
 # 不硬编码。失败则总退出码非 0。
 echo "══ [11/11] 独立场景测试注册块 ══"
-for f in tests/test_sentinel.sh tests/test_watchdog_signals.sh; do
+for f in tests/test_sentinel.sh tests/test_watchdog_signals.sh tests/test_install_agents.sh; do
   if [[ ! -f "$f" ]]; then
     echo "  (跳过：$f 不存在)"
     continue

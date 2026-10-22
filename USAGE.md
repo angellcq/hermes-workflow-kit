@@ -63,13 +63,17 @@ python .hermes/scripts/pipeline.py \
 
 ## 五、编码委派（融合版）
 
-**三种姿势，按任务选型**：
+**四种姿势，按任务选型**（v5.0 起哨兵派单为默认，另三种降级为手动调试）：
 
 | 姿势 | 适用 | 命令 |
 |------|------|------|
-| **Print 模式**（首选） | 大多数单任务 | `claude -p "读 TASK.md 并执行" --max-turns 10` |
+| **哨兵派单**（默认） | 卡进了看板就该自动跑 | `python sentinel_tick.py`（cron 5 分钟） |
+| **Print 模式**（手动调试） | 试 prompt、复现派单故障 | `claude -p "读 TASK.md 并执行" --agent cc-backend-developer --max-turns 10` |
 | **agent-bridge 后台并行** | 多任务不共写文件 | `bash agent-bridge.sh claude backend-developer "..."` |
 | **pipeline 自动跑** | 端到端交付 | `python pipeline.py --project X --task "..."` |
+
+> 角色只有 `--agent` 才真加载（写进 TASK.md 里不算）；`cc-<角色>` 由
+> `scripts/install-claude-agents.sh` 装到 `~/.claude/agents/`。
 
 **委派纪律**：详见 `AGENTS.md §六.5` 与 `§六.7`。本文件不重复通用规则——核心：
 
@@ -79,7 +83,34 @@ python .hermes/scripts/pipeline.py \
 4. **零产出 → 立即 STOP → 转手动 patch**（不是换模型能解决）
 5. 走工作流时 Hermes 不亲自改码，只拆需求→写卡→派发→独立验收
 
-## 六、注意事项
+## 六、哨兵模式（v5.0 起的默认交付姿势）
+
+装一次、配一次、之后只管建卡。
+
+```bash
+# 1) 装（幂等，先看动作再落盘）
+bash scripts/install-claude-agents.sh --dry-run
+bash scripts/install-claude-agents.sh          # 装 11 个 cc-* 到 ~/.claude/agents/
+cp config/wf.env.example config/wf.env         # 2) 配：板名 / 仓库路径 / 并发 / 冷却熔断
+# 3) 挂 tick（每 5 分钟扫一次板）
+hermes cron add "cd <repo> && python scripts/sentinel_tick.py" --every 5m
+# 4) 建卡就完事（assignee 必须是 cc- 前缀，否则哨兵不碰）
+hermes kanban --board <板> create "<标题>" --assignee cc-backend-developer --workspace dir:<worktree>
+```
+
+看三处就知道它有没有在干活：
+
+| 看哪里 | 正常长什么样 | 异常怎么判 |
+|---|---|---|
+| `logs/tick.log` | 每轮一行 `时间 rc=0 dispatched=N skipped=M total_ready=K`；**时间戳断层**就是主机休眠/调度器没 tick | 断层 > 2×`WF_POLL_SECONDS` 查 cron |
+| `logs/sentinel_state.json` | `updated_at` 一直在更新；`cooldown`/`fails` 随派单变化 | mtime 超 900 秒 → watchdog 报 `SENTINEL_DEAD` |
+| watchdog 输出 | 只有 `BOARD ...` 与 `DONE_UNVERIFIED`（待验收） | 出现 `ASSIGNEE_DRIFT` = 有卡会被网关抢单；`SENTINEL_DEAD` = 哨兵僵死 |
+
+**哨兵只派不验收**：卡被派出去后 `dispatch-lane.sh` 会 claim→跑 lane→三态产出校验→complete/block；
+验收（git diff 核对 + 编译/测试复跑）仍然是人/主会话的活。熔断（连续 3 次失败）会把卡 block 成
+`needs_input`，等人工介入。
+
+## 七、注意事项
 
 - **模板铁律不变**：先读后写、按节填写、`【】` 占位符清零、`>💡` 指引定稿删除
 - **协商触发**：歧义/冲突/复杂度命中即开会（L2+），L3 不可逆操作必须用户终审

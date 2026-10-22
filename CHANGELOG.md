@@ -4,6 +4,35 @@
 
 ---
 
+## v5.0-P5（2026-10-22）— 收尾与回归防线
+
+- 回归注册补齐 `tests/run_tests.sh` 的容错块：`test_sentinel.sh` / `test_watchdog_signals.sh` /
+  `test_install_agents.sh` 三个新测试按文件存在性注册（别的分支并行交付时缺失只跳过、不误红）
+- **期望值同步**（历史上「加脚本忘改期望值」造成过假红）：角色库计数断言 16 → **11**（v5.0 起 5 个
+  C 级角色移入 `通用角色库/deprecated/`）；`roles --json` 断言文案同步
+- `USAGE.md` 新增「六、哨兵模式」：装 → 配 `wf.env` → 挂 cron → 建卡四步 + 三张「看哪里就知道它在不在干活」
+  的表（`logs/tick.log` 时间戳断层 / `sentinel_state.json` mtime / watchdog 信号）；§五 委派姿势同步为四种
+- `README.md` 目录表补 `scripts/install-claude-agents.sh`
+- 来源：方案 `EVOLUTION_v5.0_方案.md` P5（③ 迁移手册的「回归防线」缺口）+ P4 遗留的注册项
+
+## v5.0-P4（2026-10-22）— 角色装成 CC agent（不是 Hermes profile）
+
+- 新增 `scripts/install-claude-agents.sh`：把 `通用角色库/*.md` 装到 `~/.claude/agents/<prefix><name>.md`，
+  幂等（内容 hash 比对：same 跳过 / 不同 UPDATE / 缺的 INSTALL）、`--dry-run` / `--dir` / `--prefix` / `--only`；
+  **文件名与 frontmatter `name:` 同步改写**（CC 按 name 匹配，不同名等于装了调不到）；跳过 `deprecated/`
+- `scripts/sync-roles-to-profiles.sh` 标 **DEPRECATED**（只加声明 + 运行时 stderr 提示，逻辑不动）：
+  装成 Hermes profile 会让 kanban 的 `profile_exists` 闸门对这些名字变真，网关 dispatcher 抢单把卡
+  spawn 成 Hermes worker，与 cc- 哨兵双跑同一张卡
+- 5 个 C 级角色 `git mv` 到 `通用角色库/deprecated/`（`project-manager` 抢建卡职责 / `loop-operator`
+  与 watchdog 重叠 / `planner` 替主会话拍决策 / `tdd-guide` 与验收门重复 / `docs-writer` 与模板库重复）
+- `Hermes_制度层.md`：§6.1 三种委派姿势 → **四种**（哨兵升默认）；§八 标题与口径改「11 角色在用」，
+  §8.1 纠正「角色不是 Hermes profile」并写明 Agent 工具派发会因权限弹窗卡死的硬事实，§8.4 部署命令改
+  `install-claude-agents.sh`
+- `DEPLOY.md` 新增部署前置检查四条（`claude --version` ≥2.1.300 / agents 目录基线计数 / `AGENT_TEAMS` /
+  项目级 `.claude/settings.json`），每条附「为什么要查」
+- 来源：方案 `EVOLUTION_v5.0_方案.md` P4（① agents-and-commands.md + ③ 迁移手册的角色章节）
+- 验证：`test_install_agents.sh` 7 断言全过；真实 `~/.claude/agents` 187 → 187（零污染）；引用完整性全绿
+
 ## v5.0-P3（2026-10-22）— 哨兵可观测（watchdog 新信号 + 技能口径修正）
 
 - 新信号 2 个：watchdog 增 `ASSIGNEE_DRIFT <tid> <assignee|empty>`（ready 卡 assignee 为空 /
