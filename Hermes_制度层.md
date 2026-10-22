@@ -169,13 +169,18 @@
 
 > 本机为 Windows + git-bash，**没有 tmux**。交互监控一律用 Hermes 的 `terminal(background+pty)` + `process` + `read_terminal`。
 
-### 6.1 三种委派姿势（按任务选型）
+### 6.1 四种委派姿势（按任务选型）
 
 | 姿势 | 适用 | 入口 |
 |------|------|------|
-| **Print 模式** | 大多数单任务，干净、结构化 | `claude -p` |
+| **哨兵派单（默认）** | 卡进了看板就该自动跑：`cc-` 前缀的 `ready` 卡由哨兵定时扫、过六道守卫后派给 CC lane，收尾自动写卡 | `python scripts/sentinel_tick.py`（cron 5 分钟一次） |
+| **Print 模式（手动调试）** | 手工试单条 prompt、排查 lane 行为 | `claude -p` |
 | **agent-bridge 后台并行** | 多任务不共写文件 | `bash scripts/agent-bridge.sh` |
 | **pipeline 自动跑** | 端到端可全自动交付 | `python scripts/pipeline.py` |
+
+**分工定死**：哨兵**只派，不验收**。它负责前缀过滤（只碰 `WF_AGENT_PREFIX` 开头的卡，与网关内置 dispatcher 错开零抢单）、并发上限、冷却与熔断（`logs/sentinel_state.json` 落盘，cron 每轮新进程也不会清零）、以及把卡交给 `scripts/dispatch-lane.sh`（六道守卫 + 三态产出校验 + claim/complete 回写）。验收仍是人的/主会话的活。
+
+后三种姿势降级为**手动调试**用途：日常交付走哨兵，只有在调 prompt、调角色、或复现某个派单故障时才手工 `claude -p`。
 
 ### 6.2 Print 模式（首选）
 
@@ -290,22 +295,31 @@ python .hermes/scripts/pipeline.py \
 
 ---
 
-## 八、通用角色库（16 角色，跨项目通用）
+## 八、通用角色库（11 角色在用，5 个已废弃）
 
 > **唯一清单**见 `通用角色库说明.md §二`。本节只约定调用方式。
+> 在用 11 个：A 级 8（backend-developer / frontend-developer / fullstack-developer / mobile-developer / dba / devops / test-engineer / build-error-resolver）+ B 级 3（code-reviewer / security-reviewer / architect）。C 级 5 个（`project-manager` / `loop-operator` / `planner` / `tdd-guide` / `docs-writer`）已移到 `通用角色库/deprecated/`，`install-claude-agents.sh` 不装它们。
+> **为什么废弃这 5 个**：`project-manager` 会指示 CC 自己建卡派卡（抢主会话职责）、`loop-operator` 与 cron/watchdog 重叠、`planner` 会替主会话拍设计决策、`tdd-guide` 与本套件的验收门重复、`docs-writer` 与模板库重复 —— 留着只会让 CC 越权改流程。
 
 ### 8.1 调用方式
 
-```bash
-# 单任务 Print
-bash .hermes/scripts/agent-bridge.sh claude <role> "<任务>"
+**口径先纠正**：角色**不是 Hermes profile，是 Claude Code 的 subagent 定义**。装成 Hermes profile 会让 `hermes kanban` 的 `profile_exists` 闸门对这些名字变真，网关内置 dispatcher 就会抢单把卡 spawn 成 Hermes worker —— 与 CC lane 双跑同一张卡、双写同一批文件。
 
-# 后台执行
-bash .hermes/scripts/agent-bridge.sh claude-bg <role> "<任务>" --task-id t-001
+**角色只有用 `--agent` 才算真加载**。把角色名写进 `TASK.md`/prompt（`## 角色 backend-developer`）只是给模型看的一句话，角色文件从未被读：
+
+```bash
+# 单任务（角色真加载）
+claude -p "<任务或读 TASK.md>" --agent cc-backend-developer \
+  --permission-mode acceptEdits --allowedTools Read,Write,Edit,Bash --max-turns 30
+
+# 看板哨兵派单（默认姿势，见 §6.1）
+python scripts/sentinel_tick.py
 
 # 批量并行
 bash .hermes/scripts/agent-bridge.sh parallel --tasks tasks.yaml
 ```
+
+**硬事实（实测，必须照做）**：CC 子 agent 若由 **Agent 工具**调用，写文件会被权限弹窗卡死（`default`/`bypassPermissions`/`dontAsk`/`auto` 四种模式全部失败）。唯一可行路径是 `claude -p --agent`。**禁止在任何文档/指令里写「用 Agent 工具派发」**。
 
 ### 8.2 跨语言加载约定
 
@@ -324,10 +338,16 @@ bash .hermes/scripts/agent-bridge.sh parallel --tasks tasks.yaml
 ### 8.4 部署同步
 
 ```bash
-# 一键同步 16 角色到 Hermes profiles
-bash .hermes/scripts/sync-roles-to-profiles.sh
-# 验证：hermes profile list 应显示 16 个
+# 一键把角色装成 Claude Code subagent（幂等、可先 --dry-run 看动作）
+bash .hermes/scripts/install-claude-agents.sh --dry-run
+bash .hermes/scripts/install-claude-agents.sh
+# 验证：ls ~/.claude/agents | grep -c '^cc-' 应与通用角色库（去掉 deprecated/）数量一致
+#      再抽查一个文件，frontmatter name: 必须等于文件名（CC 按 name 匹配）
 ```
+
+**装之前先数目标目录**：`~/.claude/agents/` 常被别的套件塞满（本机实测 187 个，裸名 `code-reviewer.md` 已被占），所以 kit 一律加前缀（缺省 `cc-`，与 `WF_AGENT_PREFIX` 一致），且文件名与 frontmatter `name` 必须同名，否则「装了但调不到」。
+
+`sync-roles-to-profiles.sh`（装成 Hermes profile）已标 **DEPRECATED**，只保留 3 个版本周期做兼容维护，不要再用于新部署（原因见 §8.1）。
 
 ---
 
