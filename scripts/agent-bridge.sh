@@ -5,6 +5,7 @@
 # Usage:
 #   bash agent-bridge.sh roles
 #   bash agent-bridge.sh claude <role> "<task>" [--workdir <dir>] [--max-turns N]
+#        [--board <板> --card <卡号>]   # --card 时走派单器（认领→执行→收尾）
 #   bash agent-bridge.sh claude-bg <role> "<task>" --task-id <id> [--workdir <dir>]
 #   bash agent-bridge.sh codex <role> "<task>"
 #   bash agent-bridge.sh parallel --tasks tasks.yaml
@@ -203,10 +204,10 @@ read_role_prompt() {
 # ════════════════════════════════════════════════════════════════
 
 cmd_claude() {
-  local role="" task="" workdir="" max_turns=10 allowed_tools="Read,Edit,Write,Bash,Grep"
+  local role="" task="" workdir="" max_turns=10 allowed_tools="" board="" card=""
 
   if [[ $# -lt 2 ]]; then
-    err "用法：bash agent-bridge.sh claude <role> \"<task>\" [--workdir DIR] [--max-turns N]"
+    err "用法：bash agent-bridge.sh claude <role> \"<task>\" [--workdir DIR] [--max-turns N] [--board 板] [--card 卡号]"
     return 1
   fi
 
@@ -220,13 +221,29 @@ cmd_claude() {
       --workdir)    workdir="$2"; shift 2 ;;
       --max-turns)  max_turns="$2"; shift 2 ;;
       --tools)      allowed_tools="$2"; shift 2 ;;
+      --board)      board="$2"; shift 2 ;;
+      --card)       card="$2"; shift 2 ;;
       *) err "未知参数：$1"; return 1 ;;
     esac
   done
 
   check_role "$role" || return 1
 
-  # 防空任务：写 TASK.md
+  # v5.0-P2（T-KIT-P2）：有 --card 时走"认领→执行→收尾"完整链路，转调
+  # dispatch-lane.sh——它是唯一派单入口（守卫①-⑥ + 三态产出校验都在里面），
+  # 本函数不再保留第二条独立派单路径。
+  if [[ -n "$card" ]]; then
+    local lane_args=("$card" "$role" "$task")
+    [[ -n "$workdir" ]] && lane_args+=("$workdir")
+    [[ -n "$board" ]] && lane_args+=("$board")
+    [[ -n "$allowed_tools" ]] && export WF_CLAUDE_ARGS="--allowedTools $allowed_tools"
+    log "派单经 dispatch-lane.sh [card=$card role=$role board=${board:-<WF_BOARD>}]"
+    bash "$SCRIPT_DIR/dispatch-lane.sh" "${lane_args[@]}"
+    return $?
+  fi
+
+  # ---- 无 --card：保持旧的纯执行模式（兼容现有调用，不做看板收尾）----
+  # 仍保留"写 TASK.md + -p 短指令"防空任务姿势。
   local tmpdir
   tmpdir="$(mktemp -d)"
   local task_md="$tmpdir/TASK.md"
@@ -246,7 +263,7 @@ EOF
 
   # 调用 claude -p（启动指令只写"读 TASK.md 并执行"，不超过 4KB）
   "$CLAUDE_BIN" -p "读 $task_md 并执行。完成后输出修改文件清单与 diff 摘要。" \
-    --allowedTools "$allowed_tools" \
+    ${allowed_tools:+--allowedTools "$allowed_tools"} \
     --max-turns "$max_turns" \
     --output-format json
 
@@ -671,7 +688,7 @@ main() {
     echo ""
     echo "用法："
     echo "  bash agent-bridge.sh roles [--json]"
-    echo "  bash agent-bridge.sh claude <role> \"<task>\" [--workdir DIR] [--max-turns N]"
+    echo "  bash agent-bridge.sh claude <role> \"<task>\" [--workdir DIR] [--max-turns N] [--board 板] [--card 卡号]"
     echo "  bash agent-bridge.sh claude-bg <role> \"<task>\" --task-id <id>"
     echo "  bash agent-bridge.sh codex <role> \"<task>\""
     echo "  bash agent-bridge.sh parallel --tasks <yaml>"

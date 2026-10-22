@@ -4,6 +4,29 @@
 
 ---
 
+## v5.0-P2（2026-10-22）— 派单器（守卫硬实现 + 三态产出校验）
+
+背景：kit 过去的派单是"会话里手工敲 `claude -p`"，三个实测问题——①派单不收尾（工人零产出被当完成，
+改动只躺工作区、被下一个 worker 覆盖）；②`hermes kanban claim` 静默失败无人知（工人在跑、看板显示
+todo、卡被再派一次，两个 worker 写同一份文件）；③角色定义从未真正加载（只写进 TASK.md 文本）。
+本笔把①②从文字规则变成代码（六道守卫 + 三态产出校验判定器），③只做接口预留（P4 切 `claude --agent`）。
+
+| # | 改动 | 落点 |
+|---|------|------|
+| 1 | 新增 Python 公共层：`load_config`（wf.env 解析，环境变量 > wf.env > default）/ `native_path`（MSYS `/c/xx` → `C:/xx`，git-bash 路径传原生 python 曾 chdir 失败）/ `find_hermes`（WF_HERMES → which → 裸名兜底），同一个量只有一处实现 | `scripts/wf_common.py`（新增） |
+| 2 | 新增产出校验判定器：`snapshot` 子命令输出 `HEAD sha\t工作区指纹`（md5 of sorted porcelain 行），`verdict` 子命令按固定顺序判定三态（SKIP_PRODUCE_CHECK→非 git→HEAD 变→指纹变→标题命中验证型关键词→取不到卡内容按有风险→EMPTY）；三条硬约束：验证型卡只匹配标题禁配正文 / 快照必须 Python 统一生成 bash 只透传（bash CRLF、Python LF 曾致指纹永不相同守卫失效）/ 异常退出不许静默 fail-open | `scripts/card_check.py`（新增） |
+| 3 | 新增派单器 `dispatch-lane.sh`：六道守卫（①全程显式 --board 防 current 指针漂移串板 ②claim 前查 running 状态防 dispatcher+手动双写 ③claim 后复核状态防静默失败再派 ④派单前快照/native_path 归一/取不到显式降级 ⑤WF_CLAUDE_ARGS 默认逗号分隔工具白名单+CLAUDE_CODE_MAX_OUTPUT_TOKENS=32000 防 2048 截断 ⑥三态收尾 produced=complete / EMPTY=block+两次快照评论 / skip=complete / 判定器异常=显式降级 skip+留痕 / worker 非零退出=block+透传码）；工人名自动补 WF_AGENT_PREFIX 前缀 | `scripts/dispatch-lane.sh`（新增） |
+| 4 | `cmd_claude` 改单一派单入口：新增 `--board`/`--card` 可选参数，带 `--card` 时转调 dispatch-lane.sh（认领→执行→收尾全链路），无 `--card` 保持旧的纯执行模式不破坏现有调用；**禁止**第二条独立派单路径 | `scripts/agent-bridge.sh` |
+| 5 | 新增派单器配置样例（18 键全注释：WF_BOARD/WF_REPO 必填、WF_AGENT_PREFIX=cc- 防抢单、P3 哨兵键位预落、WF_CLAUDE_ARGS 逗号分隔、WF_VERIFY_KEYWORDS 十关键词） | `config/wf.env.example`（新增） |
+| 6 | 新增守卫测试（假执行器替身 claude，记录调用 + 按场景 commit/fail7，覆盖 6 分支：running 拒派=3 且执行器零调用 / 父卡未完成=3 / 真产出=0 done 摘要含 produced / 零产出=1 blocked 评论含两次快照 / 验证型零产出=0 done / worker exit=7 透传码 blocked）；一次性看板自建自清 | `tests/test_dispatch_guards.sh`（新增） |
+| 7 | 测试集注册守卫用例为第 10 段（标题编号统一为 [x/10]），断言 6 分支全过 | `tests/run_tests.sh` |
+| 8 | 目录表补 3 个新脚本 + wf.env.example | `README.md` |
+
+未做项（后续卡）：P3 哨兵（消费 WF_MAX_CONCURRENT/WF_POLL_SECONDS 等键位）、P4 `claude --agent` 原生角色加载
+（当前 `~/.claude/agents/` 还没有 `cc-*` profile，角色名仍只写 TASK.md 文本）。
+
+---
+
 ## v4.5.3（2026-10-15）— 桥任务完成唤醒链路（B 方案：事件驱动续接）
 
 实测断链根因：`claude-bg` 只在启动时写 status.json=running，claude 完成后**没有任何代码写终态**

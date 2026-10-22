@@ -59,8 +59,8 @@ bash tests/run_tests.sh
 | `通用角色库/` + `通用角色库说明.md` | 16 角色定义与清单 | **角色清单唯一源**（agent-bridge.sh 动态扫描自动同步） |
 | `skills/` | project-workflow / kanban-executor / codegraph-review / agent-bridge / autonomous-delivery / cross-language | 技能入口 |
 | `skills/kanban-executor/references/kanban机制说明书.md` | Hermes 看板底层机制（9 态状态机、dispatcher、锁/TTL、熔断回收、排障 SQL）+ 本机源码核实勘误 | **看板机制唯一事实源** |
-| `scripts/` | agent-bridge.sh / pipeline.py / check-references.py 等 | 可执行工具 |
-| `config/` | projects.yaml / languages.yaml / stale-patterns.txt | **项目注册表与语言清单唯一源** |
+| `scripts/` | agent-bridge.sh / dispatch-lane.sh / card_check.py / wf_common.py / pipeline.py / check-references.py 等 | 可执行工具 |
+| `config/` | projects.yaml / languages.yaml / stale-patterns.txt / wf.env.example | **项目注册表与语言清单唯一源**（wf.env.example=派单器配置样例） |
 | `tests/` | 最小测试集（run_tests.sh + test_pipeline.py） | 回归防线 |
 | `DEPLOY.md` | 部署 SOP | — |
 | `USAGE.md` | 三种使用模式 | — |

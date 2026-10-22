@@ -27,12 +27,12 @@ find_py() {
 }
 PY=$(find_py)
 
-echo "══ [1/6] shell 语法检查 ══"
+echo "══ [1/10] shell 语法检查 ══"
 for f in scripts/*.sh; do
   if bash -n "$f" 2>/dev/null; then ok "$(basename "$f")"; else bad "$(basename "$f") 语法错误"; fi
 done
 
-echo "══ [2/9] python 编译检查 ══"
+echo "══ [2/10] python 编译检查 ══"
 if [[ -z "$PY" ]]; then
   bad "未找到 python，跳过"
 else
@@ -41,7 +41,7 @@ else
   done
 fi
 
-echo "══ [3/6] 角色动态加载冒烟 ══"
+echo "══ [3/10] 角色动态加载冒烟 ══"
 ROLES_OUT=$(CLAUDE_AGENTS_DIR="通用角色库" bash scripts/agent-bridge.sh roles 2>/dev/null)
 COUNT=$(echo "$ROLES_OUT" | grep -cE '^[a-z][a-z-]+[[:space:]]')
 if [[ "$COUNT" -eq 16 ]]; then
@@ -57,7 +57,7 @@ if [[ "$BDESC" == *"块格式描述冒烟"* ]]; then ok "块格式 description �
 else bad "块格式 description 解析失败：$BDESC"; fi
 rm -f "$TD/block-desc-test.md"; rmdir "$TD" 2>/dev/null
 
-echo "══ [4/6] pipeline dry-run 冒烟 ══"
+echo "══ [4/10] pipeline dry-run 冒烟 ══"
 if [[ -z "$PY" ]]; then
   bad "未找到 python，跳过"
 else
@@ -73,7 +73,7 @@ else
   rm -f "$TP/pyproject.toml"; rmdir "$TP" 2>/dev/null
 fi
 
-echo "══ [5/6] 引用完整性 ══"
+echo "══ [5/10] 引用完整性 ══"
 if [[ -z "$PY" ]]; then
   bad "未找到 python，跳过"
 elif "$PY" scripts/check-references.py; then
@@ -82,7 +82,7 @@ else
   bad "存在断链/失效引用（见上方输出）"
 fi
 
-echo "══ [6/6] update_active 双路径 ══"
+echo "══ [6/10] update_active 双路径 ══"
 TMPJ="$ROOT/.test-tmp/active.json"
 TB="$ROOT/.test-tmp/tasks"
 mkdir -p "$ROOT/.test-tmp"
@@ -103,7 +103,7 @@ fi
 rm -f "$TMPJ"; rmdir "$TB" 2>/dev/null
 rmdir "$ROOT/.test-tmp/proj" 2>/dev/null; rmdir "$ROOT/.test-tmp" 2>/dev/null
 
-echo "══ [7/9] pipeline 单元测试（FakeRunner 注入）══"
+echo "══ [7/10] pipeline 单元测试（FakeRunner 注入）══"
 if [[ -z "$PY" ]]; then
   bad "未找到 python，跳过"
 elif "$PY" -m unittest discover -s tests -p "test_*.py" >/dev/null 2>&1; then
@@ -112,7 +112,7 @@ else
   bad "pipeline 单元测试失败（python -m unittest discover -s tests 查看详情）"
 fi
 
-echo "══ [8/9] cross-language 清单加载 ══"
+echo "══ [8/10] cross-language 清单加载 ══"
 # 注意：先捕获输出再 grep -q。`cmd | grep -q` 在输出超过管道缓冲（实测 >64KB/MSYS ~4KB）
 # 时 grep 提前退出 → 上游收 SIGPIPE 而"报错"，本用例曾因此误判失败。
 LANG_LIST=$(bash scripts/cross-language.sh list 2>/dev/null)
@@ -130,7 +130,7 @@ else
 fi
 rm -f "$TP2/pyproject.toml"; rmdir "$TP2" 2>/dev/null; rmdir "$ROOT/.test-tmp" 2>/dev/null
 
-echo "══ [9/9] agent-bridge --json 输出契约 ══"
+echo "══ [9/10] agent-bridge --json 输出契约 ══"
 ROLES_JSON=$(CLAUDE_AGENTS_DIR="通用角色库" bash scripts/agent-bridge.sh roles --json 2>/dev/null)
 if echo "$ROLES_JSON" | grep -q '"name": "backend-developer"' && echo "$ROLES_JSON" | grep -q '"description"'; then
   ok "roles --json（16 角色 JSON 数组）"
@@ -146,6 +146,20 @@ else
   bad "monitor --json 输出异常"
 fi
 rm -f "$TB2/t-j1/status.json"; rmdir "$TB2/t-j1" 2>/dev/null; rmdir "$TB2" 2>/dev/null; rmdir "$ROOT/.test-tmp" 2>/dev/null
+
+echo "══ [10/10] 派单器六道守卫 + 三态产出校验（T-KIT-P2）══"
+# 独立子测试（自建一次性看板 kit-p2-selftest-guards，结束归档清理）。
+# 注意：该用例含真实 hermes CLI 调用（单次约 2-4 秒），全量实测约 1-2 分钟，
+# 是整个测试集里最慢的一段——放在最后，前面快用例先失败先暴露。
+GT_OUT=$(bash tests/test_dispatch_guards.sh 2>&1)
+GT_RC=$?
+GUARD_PASS=$(echo "$GT_OUT" | sed -n 's/.*═══ 结果：\([0-9]*\) 通过.*/\1/p' | tail -1)
+if [[ "$GT_RC" -eq 0 && "${GUARD_PASS:-0}" -ge 15 ]]; then
+  ok "守卫 6 分支全过（$GUARD_PASS 断言通过）"
+else
+  echo "$GT_OUT" | tail -20
+  bad "守卫测试失败（rc=$GT_RC，通过断言 $GUARD_PASS 个）"
+fi
 
 echo ""
 echo "═══ 结果：$PASS 通过 / $FAIL 失败 ═══"
