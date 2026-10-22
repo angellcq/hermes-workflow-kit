@@ -210,6 +210,9 @@ kit 文档与聊天里习惯用的进度词，落库真名如下（写卡/查卡
 
 ## 参考资料
 
+- `references/lifecycle-card-system.md` — 全生命周期卡体系设计（六段卡 · assignee 是路由键 /
+  负责人由前缀派生 · 三态↔9 态映射 · 派发失败矩阵），要把卡从"只覆盖开发"扩到
+  "分析→概设→详设→开发→验收→收尾"时读它，不要即兴设计
 - `references/kanban机制说明书.md` — 机制唯一事实源（13 章 + 附录，含 2026-10-13 本机源码核实的
   "勘误与补录"节 E1–E5：附录 A 命令不全、§8.4 静默不派已改为记 `skipped_nonspawnable` 事件、
   配置键全表缺漏、`default_assignee` 兜底派出行为、`list --json` 无 claim_lock 字段）
