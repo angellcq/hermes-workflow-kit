@@ -141,8 +141,9 @@ def iter_repo_files():
 
 
 def strip_deploy_paths(line: str) -> str:
-    """去掉部署路径段（~/... 开头直到下一个空白/反引号），避免 ~/.hermes/Hermes模板库/xxx 误报。"""
-    return re.sub(r"~[^\s`）)｜|]*", " ", line)
+    """去掉部署路径段（~/... 或 $HERMES_HOME/... 等变量开头，直到下一个空白/反引号），
+    避免 ~/.hermes/Hermes模板库/xxx、$HH/skills/devops/... 这类部署目标路径误报为仓内断链。"""
+    return re.sub(r"(?:~|\$[A-Za-z_][A-Za-z_0-9]*)[^\s`）)｜|]*", " ", line)
 
 
 def resolve_doc(name: str) -> Path | None:

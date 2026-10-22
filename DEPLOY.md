@@ -38,7 +38,7 @@ test -f "$PROJ/.claude/settings.json" && echo ok   # 项目级 settings 存在
 ```
 
 - **`claude --version`**：低于 2.1.300 时 `--agent` 不认，角色装上也调不到。
-- **`ls ~/.claude/agents/ | wc -l`**：agents 目录常被别的套件塞满（本机实测 187 个，裸名已被占），所以本套件装角色一律加前缀（默认 `cc-`，装到 `~/.claude/agents/cc-<name>.md`）。基线数字用于装完对比——应增加 16（角色库数量）。
+- **`ls ~/.claude/agents/ | wc -l`**：agents 目录常被别的套件塞满（本机实测 187 个，裸名已被占），所以本套件装角色一律加前缀（默认 `cc-`，装到 `~/.claude/agents/cc-<name>.md`）。基线数字用于装完对比——应增加 11（角色库数量）。
 - **`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`**：只影响 agent teams 功能，不影响 `--agent` 单 agent 加载；期望为 1 但缺失时不阻塞部署。
 - **`.claude/settings.json`**：项目级 settings 缺失会导致权限模式不可控（CC 子 agent 写文件在多数权限模式下会被弹窗卡死）。
 
@@ -76,13 +76,27 @@ cp -r "$SRC/通用角色库" "$PROJ/.hermes/"
 # 派发后自动巡检：卡完成/超时/悬空/lane 断头 → 主动通知并处置；无变化零 token
 cp "$SRC/scripts/kanban-watchdog.py" "$LOCALAPPDATA/hermes/scripts/"   # Windows（cron 要求脚本在 HERMES_HOME/scripts 下）
 # Linux/macOS: cp "$SRC/scripts/kanban-watchdog.py" ~/.hermes/scripts/
-# 注册 cron（monitor 模式：指纹不变不唤醒 agent；变化才跑处置 prompt）：
+# 注册 cron（monitor 模式：指纹不变不唤醒 agent；变化才跑处置 prompt；CLI 只有 --monitor-script 这个参数名）：
 hermes cron create "every 15m" \
   "按 kanban-executor 规则处置 monitor 指纹 diff：CLAIM_PENDING 认领悬空 ready 卡；IN_PROGRESS_TIMEOUT 查因重派或 block；DONE_UNVERIFIED 跑验收闭环（git diff 非空+编译通过+白名单核对）后 comment+archive；BLOCKED 仅汇报；BRIDGE_LANE_DEAD/STALE 查 agent-bridge 任务目录判死因；DIAG_ACTIVE 按 diagnostics 项处置（孤儿锁 reclaim 等）。中文简报收尾。" \
   --name kanban-board-watchdog --skill kanban-executor \
-  --monitor kanban-watchdog.py --deliver "feishu,bot-chat"
+  --monitor-script kanban-watchdog.py --deliver "feishu,bot-chat"
 
-# ═══ 5. 重启 Hermes 进程 ═══
+# ═══ 5. 建看板 ═══
+# <slug> 必须与该项目 config/wf.env 的 WF_BOARD 完全一致——不一致的后果：
+# 哨兵每轮 total_ready=0，日志看着正常但永远不派单
+hermes kanban board create <slug>
+
+# ═══ 6. 拷全局技能副本 + 哨兵接线 ═══
+# kanban-executor 的全局副本必须单独拷进 HERMES_HOME（只拷项目 .hermes/ 不生效——
+# cron --skill 解析的是全局技能目录）：
+mkdir -p "$LOCALAPPDATA/hermes/skills/devops/"
+cp -r "$SRC/skills/kanban-executor" "$LOCALAPPDATA/hermes/skills/devops/kanban-executor"
+# Linux/macOS: mkdir -p ~/.hermes/skills/devops/ && cp -r "$SRC/skills/kanban-executor" ~/.hermes/skills/devops/
+# 哨兵 cron（包装壳 + 心跳 touch 由 scripts/bootstrap-machine.sh --with-cron 自动生成，见下）：
+#   hermes cron create "every 5m" --no-agent --name sentinel-<板> --script sentinel-<板>.sh --deliver local
+
+# ═══ 7. 重启 Hermes 进程 ═══
 # 桌面端/网关/CLI 重启
 ```
 
@@ -127,7 +141,7 @@ PROJ/
     ├── skills/                  ← project-workflow / kanban-executor / codegraph-review / agent-bridge / autonomous-delivery / cross-language
     ├── config/                  ← projects.yaml / languages.yaml / stale-patterns.txt
     ├── scripts/                 ← agent-bridge.sh / pipeline.py / check-references.py 等
-    ├── 通用角色库/              ← 16 个跨项目通用角色 .md
+    ├── 通用角色库/              ← 11 个跨项目通用角色 .md
     ├── 通用角色库说明.md
     ├── CHANGELOG.md
     └── USAGE.md
@@ -141,3 +155,41 @@ PROJ/
 2. 目录级镜像（清空重建，源删了目标也删）：`Hermes模板库/` `skills/` `config/` `scripts/` `通用角色库/` 五个目录 `rm -rf` 后重新 `cp -r`
 3. 单文件覆盖：`Hermes_制度层.md`（去下划线）、`通用角色库说明.md`、`CHANGELOG.md`、`USAGE.md`
 4. 项目 `.hermes/` 根下项目独有文件（任务卡、追踪矩阵等）保留，不误删。
+
+## 八、换机检查单（新机器从零到哨兵跑通）
+
+按顺序 7 步，每步一条可粘贴命令 + 期望输出。前 4 步交给 `scripts/bootstrap-machine.sh`，
+第 5 步必须手工建（bootstrap 不管巡检 cron）。
+
+```bash
+# ── 1. 拉代码 + 回归防线 ──
+git clone git@github.com:angellcq/hermes-workflow-kit.git && cd hermes-workflow-kit
+bash tests/run_tests.sh
+# 期望：═══ 结果：≥25 通过 / 0 失败 ═══（失败逐条按提示修，别带病往下走）
+
+# ── 2. bootstrap 探测模式（只看不改）──
+bash scripts/bootstrap-machine.sh --project <项目根> --board <板>
+# 期望：末尾 ══ bootstrap 完成：OK=x WARN=y FAIL=0 ══；FAIL 逐条按提示修
+
+# ── 3. 落地（生成 wf.env、装 11 个角色、拷全局件、建看板）──
+bash scripts/bootstrap-machine.sh --project <项目根> --board <板> --apply
+
+# ── 4. 哨兵接线（生成 $HERMES_HOME/scripts/sentinel-<板>.sh 包装壳 + 建哨兵 cron）──
+bash scripts/bootstrap-machine.sh --project <项目根> --board <板> --apply --with-cron
+
+# ── 5. 手工建巡检 cron（bootstrap 不管这条，必须手建）──
+hermes cron create "every 15m" \
+  "按 kanban-executor 规则处置 monitor 指纹 diff：CLAIM_PENDING 认领悬空 ready 卡；IN_PROGRESS_TIMEOUT 查因重派或 block；DONE_UNVERIFIED 跑验收闭环（git diff 非空+编译通过+白名单核对）后 comment+archive；BLOCKED 仅汇报；BRIDGE_LANE_DEAD/STALE 查 agent-bridge 任务目录判死因；DIAG_ACTIVE 按 diagnostics 项处置（孤儿锁 reclaim 等）。中文简报收尾。" \
+  --name kanban-board-watchdog --skill kanban-executor \
+  --monitor-script kanban-watchdog.py --deliver "feishu,bot-chat"
+
+# ── 6. 手动跑一轮哨兵，验证派单链路 ──
+python "$HERMES_HOME/scripts/sentinel-<板>.sh"
+# 期望：项目 logs/tick.log 出现 rc=0 dispatched=0 skipped=0 total_ready=N
+
+# ── 7. watchdog 自检，确认哨兵心跳被认 ──
+python "$HERMES_HOME/scripts/kanban-watchdog.py" --board <板>
+# 期望：输出里不得出现 SENTINEL_DEAD（出现 no-state 说明第 6 步没做或失败）
+```
+
+随时复查接线：`bash scripts/bootstrap-machine.sh --check`。

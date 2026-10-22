@@ -165,7 +165,7 @@ fi
 # 别的分支会并行新增测试文件，此处按文件存在性容错：不在就跳过，
 # 不硬编码。失败则总退出码非 0。
 echo "══ [11/11] 独立场景测试注册块 ══"
-for f in tests/test_sentinel.sh tests/test_watchdog_signals.sh tests/test_install_agents.sh; do
+for f in tests/test_sentinel.sh tests/test_watchdog_signals.sh tests/test_install_agents.sh tests/test_bootstrap.sh; do
   if [[ ! -f "$f" ]]; then
     echo "  (跳过：$f 不存在)"
     continue

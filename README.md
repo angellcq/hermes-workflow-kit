@@ -66,6 +66,7 @@ bash tests/run_tests.sh
 | `scripts/dispatch-lane.sh` | 派单器：claim→执行→收尾全链路，六道守卫 + 三态产出校验；按 assignee 真加载 `cc-*` 角色（`~/.claude/agents/<name>.md` 存在才传 `--agent`）+ 缺省 `--permission-mode acceptEdits`（`WF_CLAUDE_AGENT_ENABLE`/`WF_CLAUDE_AGENTS_DIR`/`WF_CLAUDE_PERMISSION_MODE` 可配） | lane 派单唯一入口 |
 | `scripts/sentinel_tick.py` | 哨兵 tick 入口：跑一轮哨兵扫描并 touch `logs/sentinel_state.json`（watchdog 按其 mtime 判哨兵僵死） | 哨兵心跳落盘 |
 | `scripts/install-claude-agents.sh` | 把 `通用角色库/*.md` 装成 CC subagent 到 `~/.claude/agents/cc-*.md`（幂等、`--dry-run`/`--dir`/`--prefix`/`--only`，改写 frontmatter `name` 使其与文件名一致） | 角色原生加载（`claude -p --agent`，派单器按存在性自动接线） |
+| `scripts/bootstrap-machine.sh` | 探测本机（python/hermes CLI/agents 目录/cron 接线）并幂等落地 wf.env、11 角色、全局件、看板、哨兵 cron；默认只探测（`--apply` 才落盘，`--with-cron` 才建 cron，`--check` 全局自检） | 换机一键部署 |
 | `config/` | projects.yaml / languages.yaml / stale-patterns.txt / wf.env.example | **项目注册表与语言清单唯一源**（wf.env.example=派单器配置样例） |
 | `tests/` | 最小测试集（run_tests.sh + test_pipeline.py） | 回归防线 |
 | `DEPLOY.md` | 部署 SOP | — |
@@ -88,8 +89,11 @@ bash tests/run_tests.sh
 ### 哨兵部署（cron 推荐，示例，勿照抄后忘改 `<repo>`）
 
 ```bash
-hermes cron add "cd <repo> && python scripts/sentinel_tick.py" --every 5m
+hermes cron create "every 5m" --no-agent --name sentinel-<板> --script sentinel-<板>.sh --deliver local
 ```
+
+（schedule 是位置参数；`--script` 只认 `$HERMES_HOME/scripts/` 下的文件名——包装壳与全局心跳
+由 `scripts/bootstrap-machine.sh --apply --with-cron` 自动生成。）
 
 哨兵每 5 分钟扫一次板派发 `cc-` 卡；watchdog（`scripts/kanban-watchdog.py`）按
 `logs/sentinel_state.json` 的 mtime 判哨兵僵死（超 900 秒报 `SENTINEL_DEAD`）。

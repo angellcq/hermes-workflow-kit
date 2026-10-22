@@ -92,8 +92,12 @@ python .hermes/scripts/pipeline.py \
 bash scripts/install-claude-agents.sh --dry-run
 bash scripts/install-claude-agents.sh          # 装 11 个 cc-* 到 ~/.claude/agents/
 cp config/wf.env.example config/wf.env         # 2) 配：板名 / 仓库路径 / 并发 / 冷却熔断
-# 3) 挂 tick（每 5 分钟扫一次板）
-hermes cron add "cd <repo> && python scripts/sentinel_tick.py" --every 5m
+# 3) 挂 tick（每 5 分钟扫一次板；schedule 是位置参数，--script 只认 $HERMES_HOME/scripts/ 下的文件名）
+hermes cron create "every 5m" --no-agent --name sentinel-<板> --script sentinel-<板>.sh --deliver local
+# 包装壳 sentinel-<板>.sh 必须放 $HERMES_HOME/scripts/ 下（cron 不认别的路径）；
+# 且 tick 成功后要 touch $HERMES_HOME/logs/sentinel_state.json 作全局心跳，
+# 否则全局 watchdog 每轮误报 SENTINEL_DEAD。
+# 以上两件由 scripts/bootstrap-machine.sh --apply --with-cron 自动生成，无需手写。
 # 4) 建卡就完事（assignee 必须是 cc- 前缀，否则哨兵不碰）
 hermes kanban --board <板> create "<标题>" --assignee cc-backend-developer --workspace dir:<worktree>
 ```
