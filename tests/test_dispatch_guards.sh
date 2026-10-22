@@ -5,13 +5,17 @@
 # 全部断言退出码与看板状态。自建一次性看板（kit-p2-selftest-guards），结束归档清理，
 # 不碰 hermes-kit 等正式板的任何卡。
 #
-# 6 个分支：
+# 10 个分支（B1–B6 守卫判定；B7–B10 角色真加载 + 权限模式，T-KIT-P6）：
 #   B1 卡已是 running        → 退出码 3，假执行器未被调用（调用记录文件证明）
 #   B2 claim 后非 running    → 退出码 3（模拟父卡未完成：用父卡未 done 的子卡）
 #   B3 工人产出（假执行器 commit）→ 退出码 0，卡 done，摘要含 produced
 #   B4 工人零产出（exit 0 不改文件）→ 退出码 1，卡 blocked，评论含两次快照对比
 #   B5 验证型卡零产出（标题含"验收"）→ 退出码 0，卡 done
 #   B6 工人 exit=7           → 卡 blocked，脚本退出码 7
+#   B7 agents 目录有该角色   → 参数含 --agent 与 --permission-mode acceptEdits
+#   B8 agents 目录无该角色   → 参数不含 --agent；日志含「角色加载：跳过」；卡仍 done
+#   B9 ENABLE=0（角色文件在）→ 参数不含 --agent
+#   B10 PERMISSION_MODE=off  → 参数不含 --permission-mode
 #
 # ⚠ 路径形态陷阱（实测踩过）：传给**原生程序**（git、假执行器内的 git、
 # dispatch-lane.sh 的 project_dir 参数）的路径必须是 C:/... 形式；
@@ -196,6 +200,65 @@ B6_SHOW=$(card_show "$B6")
 if [[ "$RC" -eq 7 ]]; then ok "B6 退出码 7 透传（实际 $RC）"; else bad "B6 退出码期望 7，实际 $RC；输出：$OUT"; fi
 if echo "$B6_SHOW" | grep -q "^  status:[[:space:]]*blocked"; then ok "B6 卡 blocked"; else bad "B6 卡状态异常：$(echo "$B6_SHOW" | head -3)"; fi
 if echo "$B6_SHOW" | grep -q "失败 exit=7"; then ok "B6 block 原因含 exit=7"; else bad "B6 block 原因缺 exit=7"; fi
+
+# ── T-KIT-P6：角色真加载 + 权限模式（B7–B10）──
+# 与宿主机 ~/.claude/agents 状态无关：一律显式 WF_CLAUDE_AGENTS_DIR 指向
+# 自建临时目录。假执行器把收到的参数照抄进调用记录，直接断言参数文本。
+if [[ -z "$PY" ]]; then
+  echo "── B7-B10 跳过：找不到 python（native_of 需要）──"
+else
+echo "── B7 角色存在：--agent + --permission-mode acceptEdits ──"
+AGENTS_DIR="$TMP/agents"; mkdir -p "$AGENTS_DIR"
+echo "placeholder" > "$AGENTS_DIR/cc-fake-role.md"
+B7=$(new_card "B7 角色真加载")
+: > "$CALL_LOG"
+OUT=$(FAKE_CLAUDE_MODE=commit CLAUDE_BIN="$FAKE_CLAUDE" WF_BOARD="$TEST_BOARD" WF_REPO="$REPO_NATIVE" WF_PYTHON="$PY" WF_HERMES="$HERMES_BIN" \
+  WF_CLAUDE_AGENTS_DIR="$AGENTS_DIR" \
+  bash scripts/dispatch-lane.sh "$B7" fake-role "B7 任务" "$REPO_NATIVE" "$TEST_BOARD" 2>&1)
+RC=$?
+if grep -q -- "--agent cc-fake-role" "$CALL_LOG"; then ok "B7 参数含 --agent cc-fake-role"; else bad "B7 参数缺 --agent cc-fake-role：$(cat "$CALL_LOG")"; fi
+if grep -q -- "--permission-mode acceptEdits" "$CALL_LOG"; then ok "B7 参数含 --permission-mode acceptEdits"; else bad "B7 参数缺 --permission-mode acceptEdits"; fi
+if grep -q "角色加载：--agent cc-fake-role" <<<"$OUT"; then ok "B7 日志提示 --agent cc-fake-role"; else bad "B7 日志缺 --agent 提示：$OUT"; fi
+if [[ "$RC" -eq 0 ]]; then ok "B7 退出码 0（真产出正常收尾）"; else bad "B7 退出码期望 0，实际 $RC；输出：$OUT"; fi
+
+echo "── B8 角色文件不存在：不传 --agent，留痕，卡仍收尾 ──"
+AGENTS_EMPTY="$TMP/agents-empty"; mkdir -p "$AGENTS_EMPTY"
+B8=$(new_card "B8 角色缺失")
+: > "$CALL_LOG"
+OUT=$(FAKE_CLAUDE_MODE=commit CLAUDE_BIN="$FAKE_CLAUDE" WF_BOARD="$TEST_BOARD" WF_REPO="$REPO_NATIVE" WF_PYTHON="$PY" WF_HERMES="$HERMES_BIN" \
+  WF_CLAUDE_AGENTS_DIR="$AGENTS_EMPTY" \
+  bash scripts/dispatch-lane.sh "$B8" backend-developer "B8 任务" "$REPO_NATIVE" "$TEST_BOARD" 2>&1)
+RC=$?
+if grep -- "--agent" "$CALL_LOG" >/dev/null 2>&1; then bad "B8 不应传 --agent：$(cat "$CALL_LOG")"; else ok "B8 不传 --agent"; fi
+if grep -q "角色加载：跳过" <<<"$OUT"; then ok "B8 日志含「角色加载：跳过」"; else bad "B8 日志缺跳过说明：$OUT"; fi
+B8_SHOW=$(card_show "$B8")
+if [[ "$RC" -eq 0 ]] && echo "$B8_SHOW" | grep -q "^  status:[[:space:]]*done"; then
+  ok "B8 卡正常 done（不因缺角色 block）"
+else
+  bad "B8 卡收尾异常：rc=$RC，状态 $(echo "$B8_SHOW" | grep '^  status:' || echo '?')"
+fi
+
+echo "── B9 ENABLE=0：角色文件在也不传 --agent ──"
+B9=$(new_card "B9 强制关闭")
+: > "$CALL_LOG"
+OUT=$(FAKE_CLAUDE_MODE=commit CLAUDE_BIN="$FAKE_CLAUDE" WF_BOARD="$TEST_BOARD" WF_REPO="$REPO_NATIVE" WF_PYTHON="$PY" WF_HERMES="$HERMES_BIN" \
+  WF_CLAUDE_AGENTS_DIR="$AGENTS_DIR" WF_CLAUDE_AGENT_ENABLE=0 \
+  bash scripts/dispatch-lane.sh "$B9" fake-role "B9 任务" "$REPO_NATIVE" "$TEST_BOARD" 2>&1)
+RC=$?
+if grep -- "--agent" "$CALL_LOG" >/dev/null 2>&1; then bad "B9 不应传 --agent：$(cat "$CALL_LOG")"; else ok "B9 不传 --agent"; fi
+if grep -q "角色加载：关闭（WF_CLAUDE_AGENT_ENABLE=0）" <<<"$OUT"; then ok "B9 日志含关闭说明"; else bad "B9 日志缺关闭说明：$OUT"; fi
+if [[ "$RC" -eq 0 ]]; then ok "B9 退出码 0"; else bad "B9 退出码期望 0，实际 $RC；输出：$OUT"; fi
+
+echo "── B10 PERMISSION_MODE=off：不传 --permission-mode ──"
+B10=$(new_card "B10 权限模式关闭")
+: > "$CALL_LOG"
+OUT=$(FAKE_CLAUDE_MODE=commit CLAUDE_BIN="$FAKE_CLAUDE" WF_BOARD="$TEST_BOARD" WF_REPO="$REPO_NATIVE" WF_PYTHON="$PY" WF_HERMES="$HERMES_BIN" \
+  WF_CLAUDE_AGENTS_DIR="$AGENTS_DIR" WF_CLAUDE_PERMISSION_MODE=off \
+  bash scripts/dispatch-lane.sh "$B10" fake-role "B10 任务" "$REPO_NATIVE" "$TEST_BOARD" 2>&1)
+RC=$?
+if grep -- "--permission-mode" "$CALL_LOG" >/dev/null 2>&1; then bad "B10 不应传 --permission-mode：$(cat "$CALL_LOG")"; else ok "B10 不传 --permission-mode"; fi
+if [[ "$RC" -eq 0 ]]; then ok "B10 退出码 0"; else bad "B10 退出码期望 0，实际 $RC；输出：$OUT"; fi
+fi
 
 echo ""
 echo "═══ 结果：$PASS 通过 / $FAIL 失败 ═══"

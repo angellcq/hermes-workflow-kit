@@ -4,6 +4,37 @@
 
 ---
 
+## v5.0-P6（2026-10-23）— 派单器真加载角色 + 权限模式
+
+背景：P2 起派单器只把 assignee 写进 TASK.md 文本（① 角色没真加载，worker 拿不到 cc-* 的
+系统提示词，派出去的是"裸 claude"）；且只有 `--allowedTools` 没有 `--permission-mode`
+（② 缺权限模式时 worker 写文件会在权限墙上等待/被拒，历史实测表现为 **exit=0 但零产出**
+的假成功——守卫⑥能兜住，但代价是卡被 block、白烧一轮）。P4 已把 11 个角色装成
+`~/.claude/agents/cc-*.md`，本笔接通最后一公里：`claude -p --agent <assignee>` 真加载。
+
+判定顺序（`scripts/dispatch-lane.sh`，存在才传，不存在/为空/关闭都留痕一行
+「角色加载：…」）：
+
+1. `WF_CLAUDE_AGENT_ENABLE=0`（缺省 1）→ 不传 `--agent`，日志「关闭」
+2. 卡上没有 assignee → 不传，日志「跳过（卡上没有 assignee）」
+3. `~/.claude/agents/<assignee>.md` 存在 → 传 `--agent <assignee>`，日志「--agent x」
+4. 文件不存在 → **不传**（claude 对不存在的 --agent 直接报错退出，比没加载角色更糟），
+   日志「跳过（…不存在，请先跑 scripts/install-claude-agents.sh）」
+
+- 权限模式：新键 `WF_CLAUDE_PERMISSION_MODE`（缺省 `acceptEdits`），传
+  `--permission-mode <v>`（位置在 `--output-format json` 之前）；值 `off` 不传
+- agents 目录可覆盖：新键 `WF_CLAUDE_AGENTS_DIR`（缺省 `~/.claude/agents`，仅本地
+  存在性判断用，不传给原生程序）
+- 测试：`tests/test_dispatch_guards.sh` 6→10 分支（B7 角色存在→参数含 `--agent`+
+  `--permission-mode acceptEdits` / B8 角色缺失→不传 `--agent` 且卡仍正常 done /
+  B9 `ENABLE=0`→不传 / B10 `PERMISSION_MODE=off`→不传）；原有 17 断言未动
+- 文档：`config/wf.env.example` 加 3 键（各带关闭办法）、`README.md` 目录表补
+  dispatch-lane.sh 行与"按 assignee 真加载"
+- 来源：方案 `EVOLUTION_v5.0_方案.md` P6（P4 遗留的两处「接口预留」闭环；状态机未动，
+  六道守卫判定与顺序红线未动）
+
+---
+
 ## v5.0-P5（2026-10-22）— 收尾与回归防线
 
 - 回归注册补齐 `tests/run_tests.sh` 的容错块：`test_sentinel.sh` / `test_watchdog_signals.sh` /

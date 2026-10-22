@@ -15,7 +15,8 @@
 #   1) 派单不收尾（零产出被当完成，改动躺在工作区被下一个 worker 覆盖）
 #   2) claim 静默失败无人知（工人空转，卡被再派一次，双写同一份文件）
 #   3) 角色没真加载（只写进 TASK.md 文本）
-# 本脚本把 1)、2) 从文字规则变成代码；3) 只做接口预留（P4 切 claude --agent）。
+# 本脚本把 1)、2) 从文字规则变成代码。3) 由 P4+P6 闭环：P4 装角色到
+# ~/.claude/agents/cc-*.md，P6 本脚本按判定顺序真传 --agent（存在才传）+ 权限模式。
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,6 +37,13 @@ WF_PYTHON="${WF_PYTHON:-}"
 WF_HERMES="${WF_HERMES:-hermes}"
 # claude 可执行可注入（tests/test_dispatch_guards.sh 用假执行器替身）
 CLAUDE_BIN="${CLAUDE_BIN:-claude}"
+# P6：角色真加载与权限模式。ENABLE=0 强制关闭 --agent；agents 目录可覆盖
+# （该路径只被 bash [[ -f ]] 判断用，不传给原生程序，MSYS 形式即可）；
+# 权限模式缺省 acceptEdits，值 off 不传（历史实测缺它时 worker 在权限墙上等/被拒，
+# 表现为 exit=0 但零产出的假成功）。
+WF_CLAUDE_AGENT_ENABLE="${WF_CLAUDE_AGENT_ENABLE:-1}"
+WF_CLAUDE_AGENTS_DIR="${WF_CLAUDE_AGENTS_DIR:-$HOME/.claude/agents}"
+WF_CLAUDE_PERMISSION_MODE="${WF_CLAUDE_PERMISSION_MODE:-acceptEdits}"
 
 log()  { echo "[$(date +%H:%M:%S)] $*" >&2; }
 warn() { echo "[$(date +%H:%M:%S)] ⚠ $*" >&2; }
@@ -227,11 +235,31 @@ EOF
   # CLAUDE_CODE_MAX_OUTPUT_TOKENS 默认 2048 会截断长报告并崩，这里抬到 32000。
   export CLAUDE_CODE_MAX_OUTPUT_TOKENS="${WF_MAX_OUTPUT_TOKENS:-32000}"
 
+  # ═══ 角色真加载判定（P6）：存在才传 --agent，不存在/为空/关闭都留痕 ═══
+  # claude 对不存在的 --agent 会直接报错退出（比"没加载角色"更糟），所以
+  # 文件存在性是硬前置。判定顺序固定：关闭 → assignee 为空 → 存在 → 跳过。
+  local agent_flag=()
+  if [[ "$WF_CLAUDE_AGENT_ENABLE" == "0" ]]; then
+    log "角色加载：关闭（WF_CLAUDE_AGENT_ENABLE=0）"
+  elif [[ -z "$agent_name" ]]; then
+    log "角色加载：跳过（卡上没有 assignee）"
+  elif [[ -f "$WF_CLAUDE_AGENTS_DIR/$agent_name.md" ]]; then
+    agent_flag=(--agent "$agent_name")
+    log "角色加载：--agent $agent_name"
+  else
+    log "角色加载：跳过（$WF_CLAUDE_AGENTS_DIR/$agent_name.md 不存在，请先跑 scripts/install-claude-agents.sh）"
+  fi
+
+  # 权限模式（P6）：缺省 acceptEdits，off 不传；位置必须在 --output-format json 之前
+  local perm_flag=()
+  if [[ "$WF_CLAUDE_PERMISSION_MODE" != "off" && -n "$WF_CLAUDE_PERMISSION_MODE" ]]; then
+    perm_flag=(--permission-mode "$WF_CLAUDE_PERMISSION_MODE")
+  fi
+
   log "派单 [task=$task_id agent=$agent_name board=$BOARD workdir=$project_dir]"
-  # 说明：这里仍走 `claude -p`（角色名只进 TASK.md 文本），真加载要等 P4 切
-  # `claude --agent <agent_name>`——现在 ~/.claude/agents/ 里还没有 cc-* profile。
   "$CLAUDE_BIN" -p "读 $task_md 并执行。完成后输出修改文件清单与 diff 摘要。" \
     $WF_CLAUDE_ARGS \
+    "${agent_flag[@]}" "${perm_flag[@]}" \
     --output-format json
   local worker_rc=$?
 
