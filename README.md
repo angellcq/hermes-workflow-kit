@@ -57,7 +57,9 @@ bash tests/run_tests.sh
 | `Hermes_制度层.md` | 制度层：人格内核（价值观/沟通纪律/边界红线/铁律）+ 七阶段流程 + 委派规范 + 军规 | 人格内核、流程与协议唯一源 |
 | `Hermes模板库/` | 01-10 文档模板 + 编码规范_跨语言.md | 编码规范唯一源 |
 | `通用角色库/` + `通用角色库说明.md` | 16 角色定义与清单 | **角色清单唯一源**（agent-bridge.sh 动态扫描自动同步） |
-| `skills/` | project-workflow / kanban-executor / codegraph-review / agent-bridge / autonomous-delivery / cross-language | 技能入口 |
+| `skills/` | project-workflow / kanban-executor / codegraph-review / agent-bridge / autonomous-delivery / cross-language / hermes-workflow-deploy / hermes-workflow-update | 技能入口 |
+| `skills/hermes-workflow-deploy/` | 换机/新项目部署 runbook（bootstrap 探测 → 六步部署 → 验收四件套 → 回滚） | 部署技能入口 |
+| `skills/hermes-workflow-update/` | 已部署项目的日常更新（镜像同步 + 显式清理陈旧文件 + 更新后接线自检） | 更新技能入口 |
 | `skills/kanban-executor/references/kanban机制说明书.md` | Hermes 看板底层机制（9 态状态机、dispatcher、锁/TTL、熔断回收、排障 SQL）+ 本机源码核实勘误 | **看板机制唯一事实源** |
 | `scripts/` | agent-bridge.sh / dispatch-lane.sh / card-sentinel.py / sentinel_tick.py / card_check.py / wf_common.py / pipeline.py / check-references.py 等 | 可执行工具 |
 | `scripts/card-sentinel.py` | 哨兵本体：定时扫板，把 `cc-` 前缀 ready 卡交给 `dispatch-lane.sh` 派发（promote/reclaim/并发熔断都在这） | cc- 卡唯一派单者 |

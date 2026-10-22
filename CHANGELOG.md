@@ -34,6 +34,16 @@
   六道守卫判定与顺序红线未动）
 
 ---
+## v5.0-P8（2026-10-23）— 部署/更新技能入库并改写成 agent runbook
+
+- `skills/hermes-workflow-deploy/`（2.0.0，重写）：从全局 profile 收进仓库并改写成 agent 可直接执行的
+  runbook——§0 一条命令起步（`bootstrap-machine.sh` 探测/落地）→ §1 v5.0 五条硬事实（claude ≥ 2.1.300、
+  11 个 `cc-*.md`、`cron create` 位置参数 + `--script` 只认 `$HERMES_HOME/scripts/`、包装壳补全局心跳、
+  原生程序路径必须 `C:/x/y`）→ §2 六步部署顺序 → §3 验收四件套 → §4 换机失败对照表 → §5 回滚
+- `skills/hermes-workflow-update/`（1.3.0 → 1.4.0）：整份搬进仓库（含 `skills/hermes-workflow-update/scripts/deploy-one-project.sh`），
+  增量：更新后必跑 `bootstrap-machine.sh --check` 自检接线（脚本见仓库 scripts/，P7 交付）；明确 tar 镜像不会删已移除文件
+  （v5.0 五角色入 `deprecated/`，需 `--prune` 逐文件 `rm -f` 顶层副本）；改动处以 `<!-- v5.0-P8 -->` 标记
+- 两技能互指（deploy ↔ update），并均指向仓库 `DEPLOY.md` 作细节源；README 技能表补两行
 
 ## v5.0-P5（2026-10-22）— 收尾与回归防线
 
