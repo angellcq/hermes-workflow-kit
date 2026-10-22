@@ -47,11 +47,6 @@ REF_RE = re.compile(
     r"(?:Hermes模板库|通用角色库|skills|scripts)/[\w\-./\u4e00-\u9fff]+"
 )
 
-# P3 哨兵前向引用豁免（T-KIT-P3B）：card-sentinel.py / sentinel_tick.py 由 P3A
-# 并行分支交付，P3b 文档先引用。P3A 合入后文件真实存在，这两条豁免即可删除
-# （文件级检查恢复生效）。
-PENDING_DELIVERY = {"scripts/card-sentinel.py", "scripts/sentinel_tick.py"}
-
 # 匹配 `文件名.md §锚点`（锚点：中文数字 / 阿拉伯 / 混合点分）
 SECTION_REF_RE = re.compile(
     r"([\w\u4e00-\u9fff.-]+\.md)\s*§([〇一二三四五六七八九十0-9]+(?:\.[0-9]+)*)"
@@ -187,8 +182,6 @@ def main() -> int:
             clean = strip_deploy_paths(line)
             for m in REF_RE.finditer(clean):
                 ref = m.group(0).rstrip("./")
-                if ref in PENDING_DELIVERY:
-                    continue  # P3A 并行交付中，前向引用豁免（见 PENDING_DELIVERY 注释）
                 if not (ROOT / ref).exists():
                     broken.append((rel, f"L{lineno}: {ref}"))
 
