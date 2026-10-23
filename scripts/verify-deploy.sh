@@ -424,10 +424,12 @@ v11() {
   local create_rc=$?
   [[ $create_rc -eq 124 || $create_rc -eq 137 ]] && { fail "V11 冒烟建卡 30s 未返回（该命令 30s 未返回，多半是 CLI 在等 stdin 或网关锁）\
 —— 修法：手动跑 timeout 30 $HERMES_EXE kanban --board $SMOKE_BOARD create <标题> </dev/null 确认后再重跑 --smoke"; return 0; }
-  # capture id：create 输出里的长 id 串；抓不到再从板列表按标题反查
-  SMOKE_CARD_ID="$(grep -oE '[0-9a-fA-F-]{16,}' <<<"$create_out" | tail -1 || true)"
+  # capture id：真实卡 ID 形如 t_+8位hex（共 10 字符，如 t_a51d5d1a）；旧正则要求
+  # ≥16 字符，永远抓不到真 ID → 报「卡 ID=<空>」真机 FAIL（已实测）。
+  # 抓不到再从临时板 list 按 [SMOKE] 标题反查
+  SMOKE_CARD_ID="$(grep -oE 't_[0-9a-f]{8}' <<<"$create_out" | tail -1 || true)"
   if [[ -z "$SMOKE_CARD_ID" ]]; then
-    SMOKE_CARD_ID="$(timeout 30 "$HERMES_EXE" kanban list </dev/null 2>/dev/null | grep -F "$title" | awk '{print $1}' | tail -1 || true)"
+    SMOKE_CARD_ID="$(timeout 30 "$HERMES_EXE" kanban --board "$SMOKE_BOARD" list </dev/null 2>/dev/null | grep -F '[SMOKE]' | awk '{print $1}' | head -1 || true)"
   fi
   # 冒烟只验证「哨兵能选中它」，绝不真 tick：真 tick 会拉起 claude lane，
   # 既烧 token 又可能改项目文件。--dry-run 只打印计划，不写 state、不调派单器、不动卡。
@@ -435,12 +437,23 @@ v11() {
   # 保证读到的就是刚建的 [SMOKE] 卡，断言无歧义。
   local plan_out
   plan_out="$(timeout 30 python "$(to_native "$PH/scripts/card-sentinel.py")" --board "$SMOKE_BOARD" --dry-run </dev/null 2>&1)"
-  if [[ -n "$SMOKE_CARD_ID" ]] && grep -Fq "$SMOKE_CARD_ID" <<<"$plan_out"; then
-    ok "V11 冒烟通过（哨兵 plan-only 选中 SMOKE 卡：$(grep -m1 "$SMOKE_CARD_ID" <<<"$plan_out" | head -c 60)）"
-  elif grep -Fq '[SMOKE]' <<<"$plan_out"; then
-    ok "V11 冒烟通过（哨兵 plan-only 计划含 [SMOKE] 卡）"
+  # 断言放宽：计划输出命中「卡 ID / WOULD_DISPATCH / [SMOKE]」三者任一即过——
+  # ID 只是命中的手段之一，抓不到 ID 不该一票否决（哨兵真选中卡即冒烟目的达成）。
+  # ID 非空是独立检查：空了单独提示「抓不到卡 ID」，不与上面断言混报。
+  local id_hit=0
+  [[ -n "$SMOKE_CARD_ID" ]] && grep -Fq "$SMOKE_CARD_ID" <<<"$plan_out" && id_hit=1
+  local wd_hit=0 smoke_hit=0
+  grep -q 'WOULD_DISPATCH' <<<"$plan_out" && wd_hit=1
+  grep -Fq '[SMOKE]' <<<"$plan_out" && smoke_hit=1
+  if (( id_hit || wd_hit || smoke_hit )); then
+    if [[ -n "$SMOKE_CARD_ID" ]]; then
+      ok "V11 冒烟通过（哨兵 plan-only 命中：卡 ID=${id_hit} WOULD_DISPATCH=${wd_hit} [SMOKE]=${smoke_hit}）"
+    else
+      ok "V11 冒烟通过（哨兵 plan-only 命中：WOULD_DISPATCH=${wd_hit} [SMOKE]=${smoke_hit}）\
+—— 注意：卡 ID 抓不到，修法：手动跑 $HERMES_EXE kanban --board $SMOKE_BOARD list 看 ID 格式，核对 grep -oE 't_[0-9a-f]{8}'"
+    fi
   else
-    fail "V11 冒烟：哨兵 --dry-run 计划里看不到 SMOKE 卡（卡 ID=${SMOKE_CARD_ID:-<空>}）\
+    fail "V11 冒烟：哨兵 --dry-run 计划里看不到 SMOKE 卡（卡 ID=${SMOKE_CARD_ID:-<空>}，WOULD_DISPATCH/ID/[SMOKE] 均未命中）\
 —— 修法：手动跑 python '$(to_native "$PH/scripts/card-sentinel.py")' --board $SMOKE_BOARD --dry-run 看计划；\
 若是 SKIP 类，核对卡的 status/assignee；卡与临时板清理见 EXIT trap"
   fi

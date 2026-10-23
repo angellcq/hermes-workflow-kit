@@ -10,7 +10,7 @@
 #     - 所有动态调用都不传 --smoke（V11 不触发）
 #     - V10/V11 靠 T9/T11/T12 的静态断言卡住接线
 #
-# 12 条断言（T1..T12）：
+# 13 条断言（T1..T13）：
 #   T1  完整 fixture + --skip-repo-tests + --skip-watchdog（不传 --smoke）→ rc=0
 #       且输出含 `0 失败`、两条 SKIP（V1、V10）
 #   T2  缺 wf.env → V6 FAIL 且 rc=1
@@ -27,6 +27,8 @@
 #       timeout 30 "$HERMES_EXE" 调用数)，当前 8 - 1 == 7——计数式，不做逐行
 #       续行解析（旧版把续行/守卫都算成调用，误报 13 处）
 #   T12 静态：--smoke 建的是临时板——V11 里 SMOKE_BOARD 出现在 create/archive/rm 三处
+#   T13 静态：V11 抓卡 ID 正则必须是 t_[0-9a-f]{8} 且无 {16,} 残留
+#             （真 ID = t_+8位hex 共 10 字符；旧正则 ≥16 抓不到，真机 FAIL，防回退）
 # 输出契约：═══ 结果：<N> 通过 ═══（run_tests.sh 容错注册块按此解析）
 set -uo pipefail
 
@@ -303,6 +305,20 @@ if [[ -z "$T12_LOST" ]]; then
   ok "SMOKE_BOARD 接进 boards create / archive / boards rm 三处"
 else
   bad "SMOKE_BOARD 缺接线：$T12_LOST"
+fi
+
+# ── T13：静态：V11 抓卡 ID 正则必须是 t_[0-9a-f]{8}，且无 ≥16 字符旧正则残留 ──
+# 为什么卡死这个正则：真实卡 ID = t_ + 8 位 hex（共 10 字符，如 t_a51d5d1a）。
+# 旧写法 [0-9a-fA-F-]{16,} 要求 ≥16 字符，永远抓不到 → 报「卡 ID=<空>」真机 FAIL
+# （已实测）。防再退回长 ID 假设。
+echo "══ T13 卡 ID 正则 t_[0-9a-f]{8} ══"
+T13_LOST=""
+grep -qE "grep -oE 't_\[0-9a-f\]\{8\}'" "$SCRIPT" || T13_LOST="$T13_LOST 缺-t_[0-9a-f]{8}-正则"
+grep -qE '\{16,\}' "$SCRIPT"       && T13_LOST="$T13_LOST 仍有{16,}旧正则残留"
+if [[ -z "$T13_LOST" ]]; then
+  ok "V11 抓卡 ID 用 t_[0-9a-f]{8}（真 ID 10 字符），且无 {16,} 旧正则残留"
+else
+  bad "卡 ID 正则断言失守：$T13_LOST"
 fi
 
 echo ""
