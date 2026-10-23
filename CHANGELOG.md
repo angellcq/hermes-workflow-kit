@@ -19,9 +19,17 @@
   （既烧 token 又可能改项目文件）——本机实测踩过一次，已 kill 并回退
 - 真机实测（hljjt 板）：`9 通过 / 0 失败`（V1 由 `--skip-repo-tests` 跳过）；首跑还抓出一处真实漂移
   （全局 `kanban-executor` 1.1.1 未回并仓库，已并入 `b8cbd2c`）
-- **测试待补**：`tests/test_verify_deploy.sh` 本轮未入库（fixture 里用真 watchdog 会撞 30s 超时、
-  少量断言未收口），跟踪卡见看板 `hermes-kit` 的 P9 卡；当前 `tests/run_tests.sh` 不注册该测试，
-  全量回归保持全绿
+- **测试已入库**：`tests/test_verify_deploy.sh`（12 条断言；V1–V9 动态、V10/V11 静态），
+  已注册进 `tests/run_tests.sh` 容错注册块。设计要点：动态用例只跑 V1–V9（全部带
+  `--skip-repo-tests --skip-watchdog`、不传 `--smoke`），V10 要真 watchdog + 真心跳、
+  V11 要真哨兵读真板，fixture 伪造注定不稳，改为静态断言卡接线（T11 改计数式，
+  `TOTAL("$HERMES_EXE" 行) - GUARD([[-z 守卫]) == TIMED(timeout 30 调用)`，修掉旧
+  逐行解析把续行/守卫都算调用的 13 处误报）；全量 < 60s
+- `--smoke` 的 V11 冒烟改用**一次性临时板** `verify-smoke-<pid>`：目标板有活哨兵 cron，
+  「建卡→归档」窗口会被 cron 当真卡派单（本机实测拉起过 claude lane）；临时板无 cron
+  订阅天然安全，且 `--dry-run` 跑在临时板上断言无歧义
+- 新增 `--skip-watchdog`：跳过 V10 watchdog 死信检查（标 SKIP 不算失败，口径与
+  `--skip-repo-tests` 一致），fixture/无 cron 环境用
 - 已知硬约束（脚本内已处理）：所有外部 CLI 调用加 `timeout 30` + `</dev/null`（不重定向 stdin 时
   `hermes` 在非 tty 下会等输入永久挂死，实测挂过 45 分钟）；`RUN_TESTS_ACTIVE` 非空时 V1 自动 SKIP
   （否则 `run_tests.sh → test_verify_deploy → V1 → run_tests.sh` 递归）

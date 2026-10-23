@@ -2,13 +2,16 @@
 # verify-deploy.sh — 部署后能力验收（T-KIT-P9）
 #
 # 用法：
-#   bash scripts/verify-deploy.sh --project <项目根> [--board <slug>] [--skip-repo-tests] [--smoke]
+#   bash scripts/verify-deploy.sh --project <项目根> [--board <slug>] [--skip-repo-tests] [--skip-watchdog] [--smoke]
 #
 #   --project          项目根目录（必填）
 #   --board            看板 slug；缺省时从项目 .hermes/config/wf.env 的 WF_BOARD 读
 #   --skip-repo-tests  跳过 V1 仓库自检（标 SKIP，不算失败）
-#   --smoke            追加 V11 冒烟：建 [SMOKE] 卡 → 哨兵 --dry-run 计划 → 归档清理（trap 保证）
-#                      （plan-only：不写 state、不真派单、不烧 token）
+#   --skip-watchdog    跳过 V10 watchdog 死信检查（标 SKIP，不算失败；fixture/无 cron 环境用）
+#   --smoke            追加 V11 冒烟：建一次性临时板 verify-smoke-<pid> → 建卡 →
+#                      哨兵 --dry-run 计划 → 归档清理 + 删板（trap 保证）
+#                      （plan-only：不写 state、不真派单、不烧 token；
+#                       不建在目标板上——目标板有活 cron，会真派单）
 #   -h | --help        帮助
 #
 # 外部调用铁律：每条 hermes/python 外部命令统一前置 timeout（hermes/python 30s、
@@ -47,7 +50,7 @@ proj_log() {
   echo "$PROJECT/.hermes/logs/tick.log"
 }
 
-usage() { sed -n '2,11p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 # ── 结果登记 ─────────────────────────────────────────────────────
 N_PASS=0; N_FAIL=0; N_SKIP=0
@@ -59,6 +62,7 @@ skip()  { N_SKIP=$((N_SKIP + 1)); echo "○ $*（SKIP，不算失败）"; }
 PROJECT=""
 BOARD_ARG=""
 SKIP_REPO_TESTS=false
+SKIP_WATCHDOG=false
 SMOKE=false
 
 while [[ $# -gt 0 ]]; do
@@ -68,6 +72,7 @@ while [[ $# -gt 0 ]]; do
     --board)   [[ $# -ge 2 ]] || { echo "✗ --board 需要值（用法见 --help）" >&2; exit 2; }
                BOARD_ARG="$2"; shift 2 ;;
     --skip-repo-tests) SKIP_REPO_TESTS=true; shift ;;
+    --skip-watchdog)   SKIP_WATCHDOG=true; shift ;;
     --smoke)   SMOKE=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "未知参数：$1（--help 看用法）" >&2; exit 2 ;;
@@ -115,15 +120,22 @@ _board_hit() { printf '%s\n' "$1" | grep -Eq "(^|[^a-zA-Z0-9_-])${2}([^a-zA-Z0-9
 # 无板名（--board 缺省且 wf.env 读不出）时，看板相关项只能 FAIL
 BOARD=""   # 待 V6 前定出
 
-# V11 冒烟卡清理（EXIT trap 兜底，无论成败都归档 SMOKE 卡）
+# V11 冒烟清理（EXIT trap 兜底，无论成败都归档 SMOKE 卡 + 删临时板）
+# 【为什么必须建在临时板】目标板有活哨兵 cron（每 5 分钟一跳），「建卡→归档」窗口
+# 里会被 cron 当真卡派给 dispatch-lane.sh，真起 claude lane（本机实测发生过、手工
+# kill 收场）。一次性临时板 verify-smoke-<pid> 没有任何 cron 订阅，天然安全。
+# 清理顺序：先归档卡、再删板；删板失败不覆盖原判定（|| true）。
 SMOKE_CARD_ID=""
-SMOKE_ARCHIVED=false
+SMOKE_BOARD=""
 smoke_cleanup() {
-  if [[ -n "$SMOKE_CARD_ID" && "$SMOKE_ARCHIVED" == "false" ]]; then
-    timeout 30 "$HERMES_EXE" kanban --board "$BOARD" archive "$SMOKE_CARD_ID" </dev/null >/dev/null 2>&1 || true
+  if [[ -n "$SMOKE_BOARD" ]]; then
+    if [[ -n "$SMOKE_CARD_ID" ]]; then
+      timeout 30 "$HERMES_EXE" kanban --board "$SMOKE_BOARD" archive "$SMOKE_CARD_ID" </dev/null >/dev/null 2>&1 || true
+    fi
+    timeout 30 "$HERMES_EXE" kanban boards rm "$SMOKE_BOARD" --delete </dev/null >/dev/null 2>&1 || true
   fi
 }
-# trap 常置：非冒烟时 SMOKE_CARD_ID 为空 → no-op
+# trap 常置：非冒烟时 SMOKE_BOARD 为空 → no-op
 trap smoke_cleanup EXIT
 
 # ════════════════════════════════════════════════════════════════
@@ -351,6 +363,10 @@ v9() {
 
 # ── V10 无死亡误报：watchdog 输出不含 SENTINEL_DEAD ──
 v10() {
+  if $SKIP_WATCHDOG; then
+    skip "V10 watchdog 死信检查（--skip-watchdog 已指定）"
+    return 0
+  fi
   if [[ -z "$BOARD" ]]; then
     fail "V10 watchdog 自检无法跑（板名未知）—— 修法：修 V6 后重跑"
     return 0
@@ -374,7 +390,7 @@ v10() {
   fi
 }
 
-# ── V11 冒烟（仅 --smoke）：plan-only：建卡 → 哨兵 --dry-run → 断言 → 归档 ──
+# ── V11 冒烟（仅 --smoke）：plan-only：建临时板 → 建卡 → 哨兵 --dry-run → 断言 → 归档+删板 ──
 v11() {
   if ! $SMOKE; then
     return 0
@@ -383,14 +399,31 @@ v11() {
     fail "V11 冒烟无法跑（板名未知）—— 修法：修 V6 后重跑"
     return 0
   fi
+  # 一次性临时板：目标板有活哨兵 cron 会真派单（见文件头 smoke_cleanup 注释），
+  # 临时板没有 cron 订阅，天然安全。建板失败 → FAIL（非致命，return 收场）。
+  SMOKE_BOARD="verify-smoke-$$"
+  local board_out
+  board_out="$(timeout 30 "$HERMES_EXE" kanban boards create "$SMOKE_BOARD" </dev/null 2>&1)"
+  local board_rc=$?
+  if [[ $board_rc -eq 124 || $board_rc -eq 137 ]]; then
+    fail "V11 冒烟建临时板 30s 未返回（该命令 30s 未返回，多半是 CLI 在等 stdin 或网关锁）\
+—— 修法：手动跑 timeout 30 $HERMES_EXE kanban boards create <板名> </dev/null 确认；SMOKE_BOARD=$SMOKE_BOARD 若已残留可 kanban boards rm $SMOKE_BOARD --delete"
+    return 0
+  fi
+  if [[ $board_rc -ne 0 ]]; then
+    fail "V11 冒烟建临时板失败（rc=$board_rc）\
+—— 修法：手动跑 $HERMES_EXE kanban boards create verify-smoke-test 看报错（多半是 CLI 版本或权限）"
+    SMOKE_BOARD=""
+    return 0
+  fi
   local title="[SMOKE] verify-deploy smoke test, delete me"
   local create_out
-  create_out="$(timeout 30 "$HERMES_EXE" kanban --board "$BOARD" create "$title" \
+  create_out="$(timeout 30 "$HERMES_EXE" kanban --board "$SMOKE_BOARD" create "$title" \
     --assignee cc-backend-developer \
     --body 'smoke test card, self-cleaning via EXIT trap, delete me' </dev/null 2>&1)"
   local create_rc=$?
   [[ $create_rc -eq 124 || $create_rc -eq 137 ]] && { fail "V11 冒烟建卡 30s 未返回（该命令 30s 未返回，多半是 CLI 在等 stdin 或网关锁）\
-—— 修法：手动跑 timeout 30 $HERMES_EXE kanban --board $BOARD create <标题> </dev/null 确认后再重跑 --smoke"; return 0; }
+—— 修法：手动跑 timeout 30 $HERMES_EXE kanban --board $SMOKE_BOARD create <标题> </dev/null 确认后再重跑 --smoke"; return 0; }
   # capture id：create 输出里的长 id 串；抓不到再从板列表按标题反查
   SMOKE_CARD_ID="$(grep -oE '[0-9a-fA-F-]{16,}' <<<"$create_out" | tail -1 || true)"
   if [[ -z "$SMOKE_CARD_ID" ]]; then
@@ -398,16 +431,18 @@ v11() {
   fi
   # 冒烟只验证「哨兵能选中它」，绝不真 tick：真 tick 会拉起 claude lane，
   # 既烧 token 又可能改项目文件。--dry-run 只打印计划，不写 state、不调派单器、不动卡。
+  # dry-run 也必须跑在临时板上：目标板的 cron 与 state 与本次计划无关，且临时板
+  # 保证读到的就是刚建的 [SMOKE] 卡，断言无歧义。
   local plan_out
-  plan_out="$(timeout 30 python "$(to_native "$PH/scripts/card-sentinel.py")" --board "$BOARD" --dry-run </dev/null 2>&1)"
+  plan_out="$(timeout 30 python "$(to_native "$PH/scripts/card-sentinel.py")" --board "$SMOKE_BOARD" --dry-run </dev/null 2>&1)"
   if [[ -n "$SMOKE_CARD_ID" ]] && grep -Fq "$SMOKE_CARD_ID" <<<"$plan_out"; then
     ok "V11 冒烟通过（哨兵 plan-only 选中 SMOKE 卡：$(grep -m1 "$SMOKE_CARD_ID" <<<"$plan_out" | head -c 60)）"
   elif grep -Fq '[SMOKE]' <<<"$plan_out"; then
     ok "V11 冒烟通过（哨兵 plan-only 计划含 [SMOKE] 卡）"
   else
     fail "V11 冒烟：哨兵 --dry-run 计划里看不到 SMOKE 卡（卡 ID=${SMOKE_CARD_ID:-<空>}）\
-—— 修法：手动跑 python '$(to_native "$PH/scripts/card-sentinel.py")' --board $BOARD --dry-run 看计划；\
-若是 SKIP 类，核对卡的 status/assignee；卡清理见 EXIT trap"
+—— 修法：手动跑 python '$(to_native "$PH/scripts/card-sentinel.py")' --board $SMOKE_BOARD --dry-run 看计划；\
+若是 SKIP 类，核对卡的 status/assignee；卡与临时板清理见 EXIT trap"
   fi
 }
 

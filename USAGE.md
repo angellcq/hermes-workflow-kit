@@ -125,7 +125,9 @@ bash scripts/verify-deploy.sh --project <项目根> --board <板>
 V1..V10 逐项验收（仓库自检 / bootstrap 接线 / 11 个 cc- 角色 / 全局件 md5 / 项目资产 /
 板名一致 / 看板 / cron / 哨兵真跑 rc=0 / watchdog 无 `SENTINEL_DEAD`），末尾
 `═══ 验收：N 通过 / M 失败 ══`，每条 FAIL 带可粘贴修法；首台机器可加 `--smoke` 做
-端到端冒烟（建 `[SMOKE]` 卡 → tick → 自动归档）。各项的手工对照命令见 `DEPLOY.md` §八。
+端到端冒烟（建一次性临时板 `verify-smoke-<pid>` → 建卡 → 哨兵 `--dry-run` 计划 → 自动清理，
+不真派单）；fixture/无 cron 环境可加 `--skip-watchdog` 跳过 V10（SKIP 不算失败）。各项的
+手工对照命令见 `DEPLOY.md` §八。
 
 ## 七、注意事项
 

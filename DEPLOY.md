@@ -191,8 +191,10 @@ python "$HERMES_HOME/scripts/sentinel-<板>.sh"
 # ── 7. 统一验收：V1..V10 一条命令跑完（v5.0-P9 起）──
 bash scripts/verify-deploy.sh --project <项目根> --board <板>
 # 期望：═══ 验收：N 通过 / 0 失败 ══（有 FAIL 退 1，每条 FAIL 带可粘贴修法）
-# 首台机器可加 --smoke：追加 V11 冒烟（建 [SMOKE] 卡 → 哨兵 --dry-run 计划 → 断言选中 → 归档清理）
+# 首台机器可加 --smoke：追加 V11 冒烟（建一次性临时板 verify-smoke-<pid> → 建卡 →
+# 哨兵 --dry-run 计划 → 断言选中 → 归档清理）
 # --smoke 只跑哨兵 --dry-run 计划，不真派单、不烧 token
+# fixture/无 cron 环境可加 --skip-watchdog：跳过 V10（哨兵跑不了时 watchdog 必报死信，SKIP 掉）
 ```
 
 随时复查接线：`bash scripts/bootstrap-machine.sh --check`。
