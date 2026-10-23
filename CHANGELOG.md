@@ -12,10 +12,19 @@
   哨兵 cron、哨兵真跑 rc=0（tick.log 末行）、watchdog 无 `SENTINEL_DEAD`；每条 FAIL 带可粘贴修法，
   末尾 `═══ 验收：N 通过 / M 失败 ══`，有 FAIL 退 1。支持 `HERMES_BIN`/`CC_AGENTS_DIR`/`HERMES_HOME`
   测试钩子（与 bootstrap-machine.sh 同款约定）
-- `--smoke`：在板上建 `[SMOKE]` 卡（assignee `cc-backend-developer`）→ 跑一轮哨兵 → 断言
-  `total_ready` ≥ 1 → `hermes kanban archive` 归档；EXIT trap 保证无论成败都清理
-- 新增 `tests/test_verify_deploy.sh`（5 条断言，临时 HERMES_HOME + 假 hermes + 伪资产，绝不碰真实环境），
-  注册进 `tests/run_tests.sh` 容错注册块
+- `--smoke`：plan-only 冒烟——在板上建 `[SMOKE]` 卡（assignee `cc-backend-developer`）→ 跑哨兵
+  `card-sentinel.py --board <板> --dry-run`（**只打印计划，不写 state、不调派单器、不动卡**）→
+  断言计划里能看到该卡 → `hermes kanban archive` 归档；EXIT trap 保证无论成败都清理。
+  **绝不用真 tick**：真 tick 会把 `[SMOKE]` 当正常卡派给 `dispatch-lane.sh`，真的拉起 claude lane
+  （既烧 token 又可能改项目文件）——本机实测踩过一次，已 kill 并回退
+- 真机实测（hljjt 板）：`9 通过 / 0 失败`（V1 由 `--skip-repo-tests` 跳过）；首跑还抓出一处真实漂移
+  （全局 `kanban-executor` 1.1.1 未回并仓库，已并入 `b8cbd2c`）
+- **测试待补**：`tests/test_verify_deploy.sh` 本轮未入库（fixture 里用真 watchdog 会撞 30s 超时、
+  少量断言未收口），跟踪卡见看板 `hermes-kit` 的 P9 卡；当前 `tests/run_tests.sh` 不注册该测试，
+  全量回归保持全绿
+- 已知硬约束（脚本内已处理）：所有外部 CLI 调用加 `timeout 30` + `</dev/null`（不重定向 stdin 时
+  `hermes` 在非 tty 下会等输入永久挂死，实测挂过 45 分钟）；`RUN_TESTS_ACTIVE` 非空时 V1 自动 SKIP
+  （否则 `run_tests.sh → test_verify_deploy → V1 → run_tests.sh` 递归）
 - 文档接线：`DEPLOY.md` §八换机检查单第 7 步改为统一跑 verify-deploy.sh（原手工核对项保留为
   「脚本不过时怎么手工查」对照表）、`USAGE.md` §六加「部署后验收：一条命令」、
   `skills/hermes-workflow-deploy/SKILL.md` §3 验收四件套改为先跑脚本再按 §4 对照表修、README 目录表补一行

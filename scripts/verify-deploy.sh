@@ -7,9 +7,14 @@
 #   --project          项目根目录（必填）
 #   --board            看板 slug；缺省时从项目 .hermes/config/wf.env 的 WF_BOARD 读
 #   --skip-repo-tests  跳过 V1 仓库自检（标 SKIP，不算失败）
-#   --smoke            追加 V11 端到端冒烟：建 [SMOKE] 卡 → 跑一轮哨兵 → 归档清理（trap 保证）
+#   --smoke            追加 V11 冒烟：建 [SMOKE] 卡 → 哨兵 --dry-run 计划 → 归档清理（trap 保证）
+#                      （plan-only：不写 state、不真派单、不烧 token）
 #   -h | --help        帮助
 #
+# 外部调用铁律：每条 hermes/python 外部命令统一前置 timeout（hermes/python 30s、
+# V2 整体 bootstrap 探测 120s）并 </dev/null 重定向 stdin——CLI 读到非 tty 的 stdin
+# 会等输入永不返回（真机实测 V7 挂 45 分钟不返回）。rc=124（超时）按 FAIL 报，
+# 修法注明「30s 未返回，多半是 CLI 在等 stdin 或网关锁」。
 # 逐项检查 V1..V10（V11 仅 --smoke），每项要么「✓ Vn 说明」，要么
 # 「✗ Vn 说明 —— 修法：<可粘贴命令>」；FAIL 行必带修法。
 # 末尾汇总「═══ 验收：N 通过 / M 失败 ══」，有 FAIL 退 1，全过退 0。
@@ -18,6 +23,7 @@
 #   HERMES_BIN       覆盖 hermes 可执行（测试注入假 hermes）
 #   CC_AGENTS_DIR    覆盖 CC 角色目录（默认 ~/.claude/agents，测试隔离用）
 #   HERMES_HOME      覆盖全局 home（缺省 Windows=$LOCALAPPDATA/hermes，其余 ~/.hermes）
+#   RUN_TESTS_ACTIVE 由 tests/run_tests.sh export；verify 侧检测到非空即 V1 自动 SKIP（防递归）
 #
 # Windows 路径铁律：凡拼给原生程序（python.exe/hermes.exe）的路径一律 C:/x/y，
 # 统一走 to_native()（cygpath -m 可用则用），禁止 /c/x/y。
@@ -25,6 +31,21 @@ set -uo pipefail
 # 注意：不用 set -e —— 必须跑完全部检查再汇总
 
 to_native() { if command -v cygpath &>/dev/null; then cygpath -m "$1" 2>/dev/null || echo "$1"; else echo "$1"; fi; }
+
+# 取最后一条非空行（去 \r）：tick.log 类日志常带 CRLF 和尾部空行，tail -1 会取到空行
+last_nonempty() {
+  if [[ -n "${1:-}" ]]; then
+    awk 'NF{last=$0} END{print last}' "$(to_native "$1")" 2>/dev/null | tr -d '\r'
+  else
+    awk 'NF{last=$0} END{print last}' 2>/dev/null | tr -d '\r'
+  fi
+}
+
+# 哨兵日志唯一真源：哨兵 cron 的 workdir 是 <项目>/.hermes，tick.log 固定落 .hermes/logs/；
+# 不回退读 root 级 <项目>/logs/（那里不是哨兵写的，读了会掩盖哨兵没跑的真相）
+proj_log() {
+  echo "$PROJECT/.hermes/logs/tick.log"
+}
 
 usage() { sed -n '2,11p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
@@ -99,7 +120,7 @@ SMOKE_CARD_ID=""
 SMOKE_ARCHIVED=false
 smoke_cleanup() {
   if [[ -n "$SMOKE_CARD_ID" && "$SMOKE_ARCHIVED" == "false" ]]; then
-    "$HERMES_EXE" kanban --board "$BOARD" archive "$SMOKE_CARD_ID" >/dev/null 2>&1 || true
+    timeout 30 "$HERMES_EXE" kanban --board "$BOARD" archive "$SMOKE_CARD_ID" </dev/null >/dev/null 2>&1 || true
   fi
 }
 # trap 常置：非冒烟时 SMOKE_CARD_ID 为空 → no-op
@@ -111,6 +132,13 @@ trap smoke_cleanup EXIT
 
 # ── V1 仓库自检：tests/run_tests.sh 0 失败 ──
 v1() {
+  # 防递归：run_tests.sh → test_verify_deploy → verify-deploy V1 → run_tests.sh 死循环
+  # （真机实测进程树 run_tests → run_tests → verify-deploy）。run_tests.sh 会
+  # export RUN_TESTS_ACTIVE=1，此处检测到非空即自动 SKIP。
+  if [[ -n "${RUN_TESTS_ACTIVE:-}" ]]; then
+    skip "V1 仓库自检（检测到已在 run_tests.sh 内，自动 SKIP）"
+    return 0
+  fi
   if $SKIP_REPO_TESTS; then
     skip "V1 仓库自检（--skip-repo-tests 已指定）"
     return 0
@@ -119,7 +147,7 @@ v1() {
   out="$(bash "$REPO_ROOT/tests/run_tests.sh" 2>&1)"
   rc=$?
   # 抓「═══ 结果：N 通过 / M 失败 ═══」里的失败数；=0 且 rc=0 才算过
-  failn="$(sed -n 's/.*═══ 结果：[0-9]* 通过 \/ \([0-9]*\) 失败.*/\1/p' <<<"$out" | tail -1)"
+  failn="$(sed -n 's/.*═══ 结果：[0-9]* 通过 \/ \([0-9]*\) 失败.*/\1/p' <<<"$out" | last_nonempty "")"
   if [[ $rc -eq 0 && "$failn" == "0" ]]; then
     ok "V1 仓库自检通过（0 失败）"
   else
@@ -135,8 +163,15 @@ v2() {
 —— 修法：补传 --board <板>，或修好项目 .hermes/config/wf.env 的 WF_BOARD"
     return 0
   fi
-  local out
-  out="$(bash "$REPO_ROOT/scripts/bootstrap-machine.sh" --project "$(to_native "$PROJECT")" --board "$BOARD" 2>&1)"
+  local out rc
+  # 整段探测 120s 兜底：bootstrap 内部会调 hermes/python 等多个外部命令
+  out="$(timeout 120 bash "$REPO_ROOT/scripts/bootstrap-machine.sh" --project "$(to_native "$PROJECT")" --board "$BOARD" </dev/null 2>&1)"
+  rc=$?
+  if [[ $rc -eq 124 ]]; then
+    fail "V2 接线自检 120s 未返回（多半被锁或输入等待卡死）\
+—— 修法：bash scripts/bootstrap-machine.sh --project <项目> --board <板>  # 手动跑看卡在哪一步"
+    return 0
+  fi
   if grep -q 'FAIL=0' <<<"$out"; then
     ok "V2 接线自检 FAIL=0"
   else
@@ -167,13 +202,20 @@ v4() {
     return 0
   fi
   local m1 m2
-  m1="$(md5sum "$src_wd" 2>/dev/null | cut -d' ' -f1)"
-  m2="$(md5sum "$dst_wd" 2>/dev/null | cut -d' ' -f1)"
+  # md5sum 是原生程序：路径必须过 to_native，反斜杠 Windows 路径会读不到 → 得空串假报"不一致"
+  m1="$(md5sum "$(to_native "$src_wd")" 2>/dev/null | cut -d' ' -f1 | tr -d '\r')"
+  m2="$(md5sum "$(to_native "$dst_wd")" 2>/dev/null | cut -d' ' -f1 | tr -d '\r')"
+  if [[ -z "$m1" || -z "$m2" ]]; then
+    fail "V4 watchdog md5 读不到（仓库=${m1:-<空>} 全局=${m2:-<空>}），无法比对\
+—— 修法：核对文件路径与权限（$(to_native "$src_wd") / $(to_native "$dst_wd")）； \
+路径含反斜杠时用 cygpath -m 转正斜杠后再试"
+    return 0
+  fi
   local src_md="$REPO_ROOT/skills/kanban-executor/SKILL.md"
   local dst_md="$HH/skills/devops/kanban-executor/SKILL.md"
   local v1_v v2_v
-  v1_v="$(grep -m1 -E '^version:' "$src_md" 2>/dev/null | awk '{print $2}' | tr -d '\r')"
-  v2_v="$(grep -m1 -E '^version:' "$dst_md" 2>/dev/null | awk '{print $2}' | tr -d '\r')"
+  v1_v="$(grep -m1 -E '^version:' "$(to_native "$src_md")" 2>/dev/null | awk '{print $2}' | tr -d '\r')"
+  v2_v="$(grep -m1 -E '^version:' "$(to_native "$dst_md")" 2>/dev/null | awk '{print $2}' | tr -d '\r')"
   if [[ "$m1" == "$m2" && -n "$v1_v" && "$v1_v" == "$v2_v" ]]; then
     ok "V4 全局件一致（watchdog md5 相同，kanban-executor version=$v1_v）"
   else
@@ -197,8 +239,8 @@ v5() {
     return 0
   fi
   local n11 n5
-  n11="$(find "$PH/通用角色库" -maxdepth 1 -name '*.md' -type f 2>/dev/null | wc -l | tr -d ' ')"
-  n5="$(find "$PH/通用角色库/deprecated" -maxdepth 1 -name '*.md' -type f 2>/dev/null | wc -l | tr -d ' ')"
+  n11="$(find "$(to_native "$PH/通用角色库")" -maxdepth 1 -name '*.md' -type f 2>/dev/null | wc -l | tr -d ' ')"
+  n5="$(find "$(to_native "$PH/通用角色库/deprecated")" -maxdepth 1 -name '*.md' -type f 2>/dev/null | wc -l | tr -d ' ')"
   if [[ "$n11" -eq 11 && "$n5" -eq 5 ]]; then
     ok "V5 项目资产齐（五目录 + 制度层 + USAGE；通用角色库=$n11，deprecated=$n5）"
   else
@@ -215,7 +257,7 @@ v6() {
     return 0
   fi
   local wf_board
-  wf_board="$(grep -E '^WF_BOARD=' "$WFE" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'" | tr -d '\r' | tr -d ' ')"
+  wf_board="$(grep -E '^WF_BOARD=' "$(to_native "$WFE")" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'" | tr -d '\r' | tr -d ' ')"
   # --board 显式传入：无论 wf.env 是否存在都以传入值为准继续跑，V7..V10 有确定性输出
   if [[ -n "$BOARD_ARG" ]]; then
     BOARD="$BOARD_ARG"
@@ -246,8 +288,11 @@ v7() {
 —— 修法：修 V6 后重跑，或显式传 --board <板>"
     return 0
   fi
-  local out
-  out="$("$HERMES_EXE" kanban boards 2>&1 || true)"
+  local out rc
+  out="$(timeout 30 "$HERMES_EXE" kanban boards </dev/null 2>&1)"
+  rc=$?
+  [[ $rc -eq 124 || $rc -eq 137 ]] && { fail "V7 看板探测 30s 未返回（该命令 30s 未返回，多半是 CLI 在等 stdin 或网关锁）\
+—— 修法：timeout 30 $HERMES_EXE kanban boards </dev/null  # 手动复现确认"; return 0; }
   if _board_hit "$out" "$BOARD"; then
     ok "V7 看板存在：$BOARD"
   else
@@ -261,8 +306,11 @@ v8() {
     fail "V8 cron 探测无法跑（板名未知）—— 修法：修 V6 后重跑"
     return 0
   fi
-  local out
-  out="$("$HERMES_EXE" cron list 2>&1 || true)"
+  local out rc
+  out="$(timeout 30 "$HERMES_EXE" cron list </dev/null 2>&1)"
+  rc=$?
+  [[ $rc -eq 124 || $rc -eq 137 ]] && { fail "V8 cron 探测 30s 未返回（该命令 30s 未返回，多半是 CLI 在等 stdin 或网关锁）\
+—— 修法：timeout 30 $HERMES_EXE cron list </dev/null  # 手动复现确认"; return 0; }
   if _board_hit "$out" "sentinel-$BOARD"; then
     ok "V8 哨兵 cron 已挂：sentinel-$BOARD"
   else
@@ -284,9 +332,15 @@ v9() {
     return 0
   fi
   local rc last
-  bash "$wrapper" >/dev/null 2>&1
+  # 包装壳 120s 兜底：内部会跑 python 哨兵（再调 hermes CLI），链路长
+  timeout 120 bash "$(to_native "$wrapper")" </dev/null >/dev/null 2>&1
   rc=$?
-  last="$(tail -1 "$PROJECT/logs/tick.log" 2>/dev/null || true)"
+  if [[ $rc -eq 124 ]]; then
+    fail "V9 哨兵包装壳 120s 未返回（该命令未返回，多半是 CLI 在等 stdin 或网关锁）\
+—— 修法：timeout 120 bash '$(to_native "$wrapper")' </dev/null  # 手动复现确认"
+    return 0
+  fi
+  last="$(last_nonempty "$(proj_log)")"
   if [[ $rc -eq 0 && "$last" == *rc=0* ]]; then
     ok "V9 哨兵可跑（rc=0；tick.log 末行：${last:0:80}）"
   else
@@ -307,8 +361,11 @@ v10() {
 —— 修法：cp \"$(to_native "$REPO_ROOT/scripts/kanban-watchdog.py")\" \"$(to_native "$wd")\""
     return 0
   fi
-  local out
-  out="$(python "$wd" --board "$BOARD" 2>&1 || true)"
+  local out rc
+  out="$(timeout 30 python "$(to_native "$wd")" --board "$BOARD" </dev/null 2>&1)"
+  rc=$?
+  [[ $rc -eq 124 || $rc -eq 137 ]] && { fail "V10 watchdog 自检 30s 未返回（该命令 30s 未返回，多半是 CLI 在等 stdin 或网关锁）\
+—— 修法：timeout 30 python '$(to_native "$wd")' --board $BOARD </dev/null  # 手动复现确认"; return 0; }
   if ! grep -q 'SENTINEL_DEAD' <<<"$out"; then
     ok "V10 watchdog 无死亡误报"
   else
@@ -317,7 +374,7 @@ v10() {
   fi
 }
 
-# ── V11 端到端冒烟（仅 --smoke）：建卡 → tick → 断言 → 归档 ──
+# ── V11 冒烟（仅 --smoke）：plan-only：建卡 → 哨兵 --dry-run → 断言 → 归档 ──
 v11() {
   if ! $SMOKE; then
     return 0
@@ -328,29 +385,29 @@ v11() {
   fi
   local title="[SMOKE] verify-deploy smoke test, delete me"
   local create_out
-  create_out="$("$HERMES_EXE" kanban --board "$BOARD" create "$title" \
+  create_out="$(timeout 30 "$HERMES_EXE" kanban --board "$BOARD" create "$title" \
     --assignee cc-backend-developer \
-    --body 'bootstrap smoke test, delete me' 2>&1 || true)"
+    --body 'smoke test card, self-cleaning via EXIT trap, delete me' </dev/null 2>&1)"
+  local create_rc=$?
+  [[ $create_rc -eq 124 || $create_rc -eq 137 ]] && { fail "V11 冒烟建卡 30s 未返回（该命令 30s 未返回，多半是 CLI 在等 stdin 或网关锁）\
+—— 修法：手动跑 timeout 30 $HERMES_EXE kanban --board $BOARD create <标题> </dev/null 确认后再重跑 --smoke"; return 0; }
   # capture id：create 输出里的长 id 串；抓不到再从板列表按标题反查
   SMOKE_CARD_ID="$(grep -oE '[0-9a-fA-F-]{16,}' <<<"$create_out" | tail -1 || true)"
   if [[ -z "$SMOKE_CARD_ID" ]]; then
-    SMOKE_CARD_ID="$("$HERMES_EXE" kanban list 2>/dev/null | grep -F "$title" | awk '{print $1}' | tail -1 || true)"
+    SMOKE_CARD_ID="$(timeout 30 "$HERMES_EXE" kanban list </dev/null 2>/dev/null | grep -F "$title" | awk '{print $1}' | tail -1 || true)"
   fi
-  # 跑一轮哨兵 → 断言 tick.log 里 total_ready ≥ 1
-  local total after
-  bash "$HH/scripts/sentinel-$BOARD.sh" >/dev/null 2>&1 || true
-  after="$(tail -1 "$PROJECT/logs/tick.log" 2>/dev/null || echo '')"
-  total="$(grep -oE 'total_ready=[0-9]+' <<<"$after" | head -1 | cut -d= -f2)"
-  if [[ -n "$total" && "$total" -ge 1 ]]; then
-    ok "V11 端到端冒烟通过（total_ready=$total）"
-    # 归档清理（EXIT trap 也会兜底，这里成功后立刻置 true 免得 trap 重跑）
-    "$HERMES_EXE" kanban --board "$BOARD" archive "$SMOKE_CARD_ID" >/dev/null 2>&1 \
-      || true
-    SMOKE_ARCHIVED=true
+  # 冒烟只验证「哨兵能选中它」，绝不真 tick：真 tick 会拉起 claude lane，
+  # 既烧 token 又可能改项目文件。--dry-run 只打印计划，不写 state、不调派单器、不动卡。
+  local plan_out
+  plan_out="$(timeout 30 python "$(to_native "$PH/scripts/card-sentinel.py")" --board "$BOARD" --dry-run </dev/null 2>&1)"
+  if [[ -n "$SMOKE_CARD_ID" ]] && grep -Fq "$SMOKE_CARD_ID" <<<"$plan_out"; then
+    ok "V11 冒烟通过（哨兵 plan-only 选中 SMOKE 卡：$(grep -m1 "$SMOKE_CARD_ID" <<<"$plan_out" | head -c 60)）"
+  elif grep -Fq '[SMOKE]' <<<"$plan_out"; then
+    ok "V11 冒烟通过（哨兵 plan-only 计划含 [SMOKE] 卡）"
   else
-    fail "V11 冒烟 tick 未拉到 SMOKE 卡（tick.log 末行：${after:-<空>}）\
-—— 修法：先手动跑 bash '$(to_native "$HH/scripts/sentinel-$BOARD.sh")' 再看 \
-'$(to_native "$PROJECT")/logs/tick.log'；冒烟卡清理见 EXIT trap"
+    fail "V11 冒烟：哨兵 --dry-run 计划里看不到 SMOKE 卡（卡 ID=${SMOKE_CARD_ID:-<空>}）\
+—— 修法：手动跑 python '$(to_native "$PH/scripts/card-sentinel.py")' --board $BOARD --dry-run 看计划；\
+若是 SKIP 类，核对卡的 status/assignee；卡清理见 EXIT trap"
   fi
 }
 
