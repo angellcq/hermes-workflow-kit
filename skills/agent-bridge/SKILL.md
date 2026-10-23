@@ -1,7 +1,7 @@
 ---
 name: agent-bridge
 description: "Use when 多 Agent 后台并行/角色扮演/委派外部 CLI (claude/codex). 统一封装多 Agent 调用与编排."
-version: 1.0.0
+version: 1.0.1
 platforms: [windows, linux, macos]
 ---
 
@@ -106,15 +106,19 @@ Task started: t-001
   Output: ~/.workbuddy/agent-bridge/tasks/t-001/output.json
 ```
 
-**收割器（run.sh）**：claude-bg 不裸起 claude，而是起 `<task_dir>/run.sh` 包装层——claude
-退出（无论成败）必把 status.json 改写为 `completed`/`failed` + exit_code + finished_at。
-status.json 里的 `pid` 是收割器的 PID，它全程存活直到 claude 退出，因此「pid_alive 判活」与
+**收割器（run.sh，2026-10-15 B 方案）**：claude-bg 不裸起 claude，而是起 `<task_dir>/run.sh` 包装层——
+claude 退出（无论成败）必把 status.json 改写为 `completed`/`failed` + exit_code + finished_at。
+status.json 里的 `pid` 是收割器的 PID，它全程存活直到 claude 退出，所以「pid_alive 判活」与
 「status.json 终态」两条信号一致（旧版只在启动时写 running，claude 完成后状态永远停留 →
 没有任何唤醒源，S5/S6 断链——这是本收割器要解决的问题）。kanban-watchdog 对未确认终态报
 `BRIDGE_LANE_DONE`，驱动巡检 agent 验收续接；**验收闭环走完才准 `touch <task_dir>/ack` 清信号**
 （详见 `kanban-executor` §2）。
-⚠ 改项目 `.hermes/scripts/agent-bridge.sh` / `kanban-watchdog.py` 后，若 cron 等入口从
+**同步提醒**：改项目 `.hermes/scripts/agent-bridge.sh` / `kanban-watchdog.py` 后，若 cron/其它入口从
 `HERMES_HOME/scripts/` 读同名脚本，必须同步拷贝并 md5 核对（实测曾三处副本不同步、改动静默失效）。
+**验信号探针的路径坑**：用 `AGENT_BRIDGE_TASK_BASE=<scratch>` 手跑 kanban-watchdog.py 验证
+`BRIDGE_LANE_DONE` 时，环境变量必须是 Windows 原生路径（`C:/...`）——喂 MSYS/POSIX 路径
+（`/c/...`、`$TMPDIR`）时脚本 `is_dir()` 判定失败会**静默跳过**整个 bridge 段，输出只剩 `BOARD` 一行，
+看起来像「信号没生效」，实则是路径没被识别。探针输出为空先查路径，再怀疑逻辑。
 
 **监控**：
 
@@ -185,6 +189,33 @@ bash agent-bridge.sh codex <role> "<任务>"
 - 模型互补（claude 擅长推理，codex 擅长实现）
 
 **注意**：codex CLI 不完全兼容 claude 的 flags，agent-bridge 自动适配。
+
+---
+
+## 派发前必须去重（claude-bg 双写事故）
+
+`claude-bg` **不是幂等的**：同一 `--task-id` 重复调用会起第二个 claude 进程，**两个 Agent 同时改同一批文件**（无锁、无冲突检测，最后落盘的是谁赢不确定），而 `status.json` 只记录后一个 PID，前一个变孤儿继续跑。
+
+**多任务连续派发时最易踩的坑：命令行里的 `--task-id` 与 `cat` 的派发文件对不上。** 一条一条复制上一条命令改参数时，很容易只改了文件名而忘了改 `--task-id`（实测：把同一张任务书配了同一个 `--task-id` 派了两遍，两次间隔 55 秒，靠 `Get-CimInstance` 比对 CreationDate 才发现）。**每条 claude-bg 命令发出前，把 `--task-id` 的值与派发文件名里的任务号对一遍**，或干脆用变量：`ID=<卡号>; FILE=<派发文件>`，命令行里只引用变量，不手写 ID。
+
+派发前先查在跑的任务，确认没有同 task_id 的 claude 进程：
+
+```bash
+bash agent-bridge.sh list                    # active.json 里的活跃任务
+cat ~/.workbuddy/agent-bridge/tasks/<task-id>/status.json   # 已有则看 pid / state
+```
+
+**判断"我的任务还活着吗"不能数 `tasklist | grep -ci claude`**——多项目并行时别的仓库/别的会话的 claude.exe 也会被数进去（实测：本项目任务跑着 1 个，全局看是 2 个，另一个属于另一个仓库的任务），由此误判成"双写事故"而误杀别的任务。按 PID 精确判定：
+
+```bash
+# 本任务真正的 claude.exe：父进程是你派发时的 sh.exe —— 用父命令行认领
+powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"name='claude.exe'\" | ForEach-Object { \$p=\$_.ProcessId; \$pp=(Get-CimInstance Win32_Process -Filter \"ProcessId=\$(\$_.ParentProcessId)\").CommandLine; [PSCustomObject]@{Pid=\$p;Parent=\$_.ParentProcessId;Mine=(\$pp -like '*tasks/<task-id>*')} } | Format-Table -AutoSize"
+```
+
+`Mine=True` 的那一行才是你的。注意 `tasks/<task-id>/pid` 记的是 agent-bridge 那边的 shell PID，**不是** claude.exe 的 PID，两者不可混用。
+
+- 命令发出去后**不要凭「好像没起来」就重发**——后台启动本身可能只是输出被你漏看（转义错误会让 echo 出来的命令行与实际执行的不一致，更难判断）。重发前必须 `list` + `tasklist` 核过。
+- 已误起两个：`taskkill //PID <后起的> //F`（git-bash 下要双斜杠），**只杀后起的**，前一个才是写入方；杀完立刻 `git status` + `git diff` 核对落盘内容是否为单一来源。
 
 ---
 

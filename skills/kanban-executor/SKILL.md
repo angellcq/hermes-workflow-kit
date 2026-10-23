@@ -1,7 +1,7 @@
 ---
 name: kanban-executor
 description: "Use when 看板任务需要自动认领/巡检/回收. Kanban 任务生命周期自动化."
-version: 1.1.1
+version: 1.1.2
 platforms: [windows, linux, macos]
 ---
 
@@ -18,6 +18,8 @@ platforms: [windows, linux, macos]
 1. **每个 `hermes kanban` 子命令必须显式带 `--board <板>`**。`current` 指针是全局单值，
    不带板名的命令会静默打到别的板上（claim 尤其致命：日志写"claimed → running"，目标板纹丝不动，
    该卡还会被自动派单再派一次 → 双 worker 同写一份代码）。
+   **给新项目建板时不要 `--switch`**：`boards create` 会顺手把全局 `current` 指针改到新板，
+   别的项目正在跑的巡检从此静默盯错板；建完保留原指针，之后每条命令显式带 `--board <新板>`。
 2. **assignee 是路由键，不是负责人备注**。本 kit 的外部执行者模式下，任务一律派给
    **非真实 profile 名**的 lane（如 `claude-code-lane`）——内置 dispatcher 的 profile 门会跳过
    这类卡，这是防"Hermes 自己抢单跑代码"的机制手段（说明书 §13.2 手段①，本机实测有效：
@@ -85,6 +87,14 @@ hermes kanban --board <板> list --status ready --json
   lane 名须符合铁律 2），同时通知用户，不做静默兜底
 - 有 lane assignee 但长期 ready → `tail <卡号>` 查事件流：`skipped_nonspawnable` = 外部执行者
   未取单（正常，等哨兵）；无事件 = 检查网关是否在跑（dispatcher 在网关里，网关停=不派单）
+- **补派/认领前必须先查外部执行者进程**：`tasklist | grep -i claude`，或用
+  `wmic process where "ProcessId=<pid>" get CommandLine` 取出命令行与卡体比对。
+  `claude.exe -p "<卡体…>"` 在跑 = 该卡正在被外部 Claude Code 执行 → **禁止再 assign/claim**
+  （双写同一文件的事故根因）。判据组合：进程活着 + 白名单源文件尚未落盘 + 仅 bin/obj 有近期
+  写入 = 执行中，等它收尾。只有「无进程 + 白名单源文件 mtime 落不进该卡窗口」才算真未取单。
+  说明：lane 卡（assignee=`claude-code-lane`）**不会**进脚本指纹（只有无 assignee 的 ready 卡才发
+  CLAIM_PENDING），所以误派只可能来自 agent 自己的判断——本检查是本技能的义务，别指望指纹兜底。
+  已耗过两轮（T-TM-4 / T-TM-7）误报「无外部执行者取单」，落地即按此查。
 - ready + 反复 claim 报 `lock=<主机>:<PID>` = 孤儿锁 → 见「超时回收」第 3 步
 
 ### 2. 心跳与巡检
@@ -235,6 +245,9 @@ kit 文档与聊天里习惯用的进度词，落库真名如下（写卡/查卡
 - **下游**：编码代理（Claude Code/Codex）产出后，本技能做**完成验证闭环**（git diff 非空 + 编译通过 + changed_files 核对），通过才标 `done`
 - **旁路**：`codegraph-review` 在编码代理改码**之前**被调用评估波及面，评估报告作为任务卡附件
 - **兜底**：cron 任务 `kanban-board-watchdog` 每 15 分钟跑 `scripts/kanban-watchdog.py`（monitor 模式，指纹不变不唤醒 agent、零 token；变化才唤醒本技能规则处置：悬空卡补派 lane、超时卡回收/阻塞、done 卡验收闭环后归档、lane 断头判死因、孤儿锁 reclaim）。指纹信号：CLAIM_PENDING / IN_PROGRESS_TIMEOUT / DONE_UNVERIFIED / BLOCKED / BRIDGE_LANE_DEAD / BRIDGE_LANE_STALE / BRIDGE_LANE_DONE（处置见 §2）/ DIAG_ACTIVE。部署见 kit DEPLOY.md「三、部署步骤」第 4 步（看板巡检 watchdog）
+- **兜底运维**（两条，铁律 1 对 cron 同样成立）：
+  1. watchdog 的 monitor 脚本与巡检命令**必须钉死 `--board <板>`**。本机实测配置未带板名，靠全局 `current` 指针工作 —— 指针一换就静默盯错板，而空板/错板都会被判成"巡检正常"（假绿）。改配置时先核这一项。
+  2. 该 cron **没有"看板排空即停"的终止条件**，会按周期无限空转（指纹不变时零 token，但仍有调度 tick 与简报投递）。看板排空后应 `hermes cron pause <job_id>` 停掉而非 remove（配置留档）；下次要派批量任务时 `hermes cron resume <job_id>` 即恢复。
 
 **调用时机**：看板出现 ready/blocked/超时任务，或 S4 需要建卡派发时，加载本技能。
 

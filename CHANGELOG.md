@@ -4,6 +4,34 @@
 
 ---
 
+## v5.0-P10（2026-10-23）— 技能双向漂移回并 + `--prune` 静默零删除修复
+
+**背景**：6 个已部署项目 `.hermes/` 与仓库 HEAD 逐文件一致，但全局技能副本（`$HERMES_HOME/skills/`，
+Hermes 实际加载的那份）与仓库双向漂移——仓库领先（`kanban-executor` §0 建卡硬闸门、哨兵状态路径、
+cron 两条硬约束、归档消音、手动批次推进模式）的同时，全局副本也攒了没回并的实战经验。按「仓库为唯一
+事实源，全局件要么与仓库同源、要么只差路径形态」收口：
+
+- `skills/kanban-executor` 1.1.1 → **1.1.2**：回并全局副本三段——铁律 1「建新板不要 `--switch`」
+  （会把全局 `current` 指针改走，别的项目巡检静默盯错板）、§1「补派/认领前必须先查外部执行者进程」
+  （`tasklist`/`wmic` 命令行比对卡体，lane 卡不进脚本指纹，误派只可能来自 agent 判断；含 T-TM-4/T-TM-7
+  两轮误报教训）、「兜底运维」两条（watchdog cron 必须钉死 `--board`；看板排空后 `pause` 而非 `remove`）
+- `skills/project-workflow` 1.0.0 → **1.0.1**：回并 S2 五条（用户给定章节结构优先 / 每条「现状如此」带
+  `文件:行号` / `<占位符>` 先去仓库求证、查不到的集中成末尾一张表 / 一轮只交付一个阶段 + `Z-xx`/`Q-xx`
+  决策队列 / 「逐项处理」关联面连「本项目没有」也列出并附证伪 grep）、S5「用户催进度时的回应姿势」
+  （不许「我先查一下」空回）；`references/web-admin-restructure-impact-checklist.md`（原只存在于全局副本）
+  收入仓库并接线
+- `skills/agent-bridge` 1.0.0 → **1.0.1**：回并「收割器 B 方案」补充说明、脚本三处副本同步提醒、
+  `AGENT_BRIDGE_TASK_BASE` 探针必须喂 Windows 原生路径的坑（喂 `/c/...` 时 watchdog 静默跳过整个
+  bridge 段，只剩 `BOARD` 一行）、新增「派发前必须去重（claude-bg 双写事故）」整节——`claude-bg` 不幂等、
+  `--task-id` 与派发文件对不上会双写同一批文件、按父命令行精确认领 claude.exe（不数进程总数）、
+  误起两进程时只杀后起的
+- `skills/hermes-workflow-update/scripts/deploy-one-project.sh`：`--prune` 的陈旧文件删除链 `sed -n` 缺 `p`
+  标志 → 正则匹配到却零输出，**报「有陈旧」但一个都不删**（实测复现：ASCII 最小夹具先证伪语法，再怀疑中文路径）
+- 口径：项目级部署副本与全局副本的**路径形态按设计不同**（项目 `.hermes/...` vs 全局 `~/.hermes/...`、
+  角色库 `~/.claude/agents/`），回并时只搬内容不搬路径；两列 `diff` 校验时这类差异属预期噪声
+
+---
+
 ## v5.0-P9（2026-10-23）— 部署后能力验收脚本
 
 - 新增 `scripts/verify-deploy.sh`：部署后一条命令跑完 V1..V10（`--smoke` 追加 V11 端到端冒烟）——

@@ -26,7 +26,12 @@
 #
 # ⚠ 运行耗时：约 6 个分支 × 每分支 2-4 次 hermes CLI 调用（单次约 2-4 秒），
 # 全量实测约 1-2 分钟。每个分支内 show 只调一次，状态/评论从同一份输出取。
+#
+# ⚠ stdin 必须关掉（实测踩过）：hermes CLI 在**非 tty** 下遇到需要确认/读取输入的分支会
+# 永久等待，整条 run_tests.sh 就挂在这一步（实测挂 > 8 分钟，无任何输出）。由调用方
+# 逐个调用点加 `</dev/null` 太容易漏，改为本脚本开头一次性 `exec </dev/null`。
 set -uo pipefail
+exec </dev/null
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"

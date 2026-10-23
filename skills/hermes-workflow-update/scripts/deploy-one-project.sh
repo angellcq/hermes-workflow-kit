@@ -49,8 +49,8 @@ echo "[$NAME] 目录镜像完成"
 # 3) 真镜像模式：删掉源已无的陈旧文件（tar 不会替你做这一步）
 if [[ "$PRUNE" == "1" ]]; then
   for d in Hermes模板库 skills config scripts 通用角色库; do
-    diff -rq "$PROJ/.hermes/$d" "$SRC/$d" 2>/dev/null \
-      | sed -n "s|^Only in $PROJ/.hermes/\(.*\): \(.*\)$|$PROJ/.hermes/\1/\2|" \
+    diff -rq -x '__pycache__' -x '*.pyc' -x '.test-tmp' "$PROJ/.hermes/$d" "$SRC/$d" 2>/dev/null \
+      | sed -n "s|^Only in $PROJ/.hermes/\(.*\): \(.*\)$|$PROJ/.hermes/\1/\2|p" \
       | while read -r f; do [[ -e "$f" ]] && rm -f "$f" && echo "[$NAME] 删除陈旧: ${f#$PROJ/.hermes/}"; done
   done
 fi
@@ -70,8 +70,8 @@ fi
 # 6) 校验：每目录两列指标 + 单文件精确比对 + 角色计数
 echo "[$NAME] --- 校验 ---"
 for d in Hermes模板库 skills config scripts 通用角色库; do
-  only=$(diff -rq "$PROJ/.hermes/$d" "$SRC/$d" 2>/dev/null | grep -c "^Only in $PROJ")
-  diffc=$(diff -rq "$PROJ/.hermes/$d" "$SRC/$d" 2>/dev/null | grep -c "^Files")
+  only=$(diff -rq -x '__pycache__' -x '*.pyc' -x '.test-tmp' "$PROJ/.hermes/$d" "$SRC/$d" 2>/dev/null | grep -c "^Only in $PROJ")
+  diffc=$(diff -rq -x '__pycache__' -x '*.pyc' -x '.test-tmp' "$PROJ/.hermes/$d" "$SRC/$d" 2>/dev/null | grep -c "^Files")
   echo "  $d: 目标多余=$only 内容不一致=$diffc"
 done
 for pair in "Hermes_制度层.md:Hermes制度层.md" "USAGE.md:USAGE.md" "通用角色库说明.md:通用角色库说明.md"; do
