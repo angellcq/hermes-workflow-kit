@@ -2,3 +2,7 @@ __pycache__/
 *.py[cod]
 *.pyo
 .test-tmp/
+# BIP 旗舰版技能包（工具下载产物，49MB，不入库）
+.hyperion/
+# 个人笔记草稿
+IDEA.md
