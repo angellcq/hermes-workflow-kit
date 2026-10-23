@@ -75,8 +75,11 @@ write_task_md() {
 # 取可用的 JSON 处理器：jq 优先，python 兜底；都没有返回 1
 _json_bin() {
   if command -v jq &>/dev/null; then echo "jq"; return 0; fi
-  if command -v python3 &>/dev/null; then echo "python3"; return 0; fi
-  if command -v python &>/dev/null; then echo "python"; return 0; fi
+  # 探活再选：Windows 上 `python3` 常是 Microsoft Store 的重定向桩（`command -v` 查得到，
+  # 执行直接返回非 0 且零输出），只按 command -v 选会静默产出空 JSON，
+  # 表现为 `roles --json` / `monitor --json` / update_active 全部"异常"。
+  if command -v python3 &>/dev/null && python3 -c 'import json' &>/dev/null; then echo "python3"; return 0; fi
+  if command -v python &>/dev/null && python -c 'import json' &>/dev/null; then echo "python"; return 0; fi
   return 1
 }
 
@@ -436,8 +439,8 @@ _update_active_locked() {
     mv "$tmp" "$ACTIVE_FILE"
   else
     local py_bin=""
-    command -v python3 &>/dev/null && py_bin="python3"
-    [[ -z "$py_bin" ]] && command -v python &>/dev/null && py_bin="python"
+    command -v python3 &>/dev/null && python3 -c 'import json' &>/dev/null && py_bin="python3"
+    [[ -z "$py_bin" ]] && command -v python &>/dev/null && python -c 'import json' &>/dev/null && py_bin="python"
     if [[ -n "$py_bin" ]]; then
       local tmp
       tmp=$(mktemp)

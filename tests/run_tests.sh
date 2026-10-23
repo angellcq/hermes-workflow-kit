@@ -65,7 +65,11 @@ else
   printf '[project]\nname = "smoke-test"\nversion = "0.1.0"\n' > "$TP/pyproject.toml"
   WTP="$TP"
   command -v cygpath &>/dev/null && WTP=$(cygpath -w "$TP")
-  if "$PY" scripts/pipeline.py --project my-app --task "冒烟测试" --dry-run --only-analyze --path "$WTP" >/dev/null 2>&1; then
+  # ⚠ 必须把注册表钉到 kit 自己的 config/projects.yaml：pipeline 的加载顺序是
+  # HERMES_PROJECTS_YAML → $HERMES_HOME/config/projects.yaml → 仓库内置。开发机一旦在
+  # HOME 建了真实注册表（本机 2026-10-23 建了 6 个项目），这里用 `--project my-app`
+  # 就会因为 HOME 里没有 my-app 而失败——测试不该依赖操作员 HOME 的状态。
+  if HERMES_HOME="$ROOT" HERMES_PROJECTS_YAML= "$PY" scripts/pipeline.py --project my-app --task "冒烟测试" --dry-run --only-analyze --path "$WTP" >/dev/null 2>&1; then
     ok "pipeline --dry-run --only-analyze（--path 临时项目）"
   else
     bad "pipeline dry-run 失败"
