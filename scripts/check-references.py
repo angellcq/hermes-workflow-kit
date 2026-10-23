@@ -63,6 +63,35 @@ STEP_TOKEN_RE = re.compile(r"^\D{0,12}([0-9]+(?:\.[0-9]+)*)[.、]\s*\S")
 CN_DIGITS = {"〇": 0, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
              "六": 6, "七": 7, "八": 8, "九": 9}
 
+# 产物/依赖目录不参与引用完整性检查（.hyperion/ 是 49MB BIP 技能包工具下载产物，已入库 .gitignore）
+# 优先读仓库根 .gitignore 的目录型条目（以 / 结尾），再用内置清单兜底
+BUILTIN_IGNORED_DIRS = {".git", "__pycache__", "node_modules", ".venv", ".test-tmp", ".hyperion"}
+
+
+def _load_ignored_dirs() -> set[str]:
+    ignored = set(BUILTIN_IGNORED_DIRS)
+    try:
+        for line in (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.endswith("/"):
+                name = line.rstrip("/")
+                # 只取目录名本身（含 * 或嵌套路径的复杂 pattern 交给内置清单兜底）
+                if "*" not in name and "/" not in name:
+                    ignored.add(name)
+    except OSError:
+        pass
+    return ignored
+
+
+IGNORED_DIRS = _load_ignored_dirs()
+
+
+def is_skipped(path: Path) -> bool:
+    """路径任一段命中产物/依赖目录即跳过，不参与引用检查。"""
+    return not IGNORED_DIRS.isdisjoint(path.parts)
+
 
 def cn_to_int(text: str) -> int | None:
     """中文数字 → 阿拉伯（支持 〇~九十九）。"""
@@ -130,7 +159,9 @@ def iter_repo_files():
         # .git / .deploy-backup（部署备份是旧快照，不是活资产）/ .test-tmp（测试工作区）不参与引用检查
         if p.suffix not in (".md", ".sh", ".py"):
             continue
-        if {".git", ".deploy-backup", ".test-tmp", "plans", "_task"} & set(p.parts):
+        if is_skipped(p):
+            continue
+        if {".deploy-backup", "plans", "_task"} & set(p.parts):
             continue
         # _task/ 同 plans：任务卡是规划文档，会前向引用尚未交付的产物路径，不是失效引用
         # 方案/规划类文档（EVOLUTION_*/PLAN_*）会前向引用"尚未交付的产物路径"，
@@ -152,7 +183,7 @@ def resolve_doc(name: str) -> Path | None:
     candidate = ROOT / real
     if candidate.exists():
         return candidate
-    matches = [p for p in ROOT.rglob(real) if ".git" not in p.parts]
+    matches = [p for p in ROOT.rglob(real) if not is_skipped(p)]
     return matches[0] if matches else None
 
 
