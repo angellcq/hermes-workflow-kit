@@ -85,7 +85,7 @@ hermes cron create "every 15m" \
 # ═══ 5. 建看板 ═══
 # <slug> 必须与该项目 config/wf.env 的 WF_BOARD 完全一致——不一致的后果：
 # 哨兵每轮 total_ready=0，日志看着正常但永远不派单
-hermes kanban board create <slug>
+hermes kanban boards create <slug>
 
 # ═══ 6. 拷全局技能副本 + 哨兵接线 ═══
 # kanban-executor 的全局副本必须单独拷进 HERMES_HOME（只拷项目 .hermes/ 不生效——
