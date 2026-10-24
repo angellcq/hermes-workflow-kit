@@ -200,7 +200,7 @@ if [[ -n "$BOARD" ]]; then
     if echo "$_boards" | grep -Eq "(^|[^a-zA-Z0-9_-])${BOARD}([^a-zA-Z0-9_-]|$)"; then
       p_ok "看板 $BOARD 存在"
     else
-      p_warn "看板 $BOARD 不存在 —— 修法：hermes kanban board create $BOARD（--apply 自动建）"
+      p_warn "看板 $BOARD 不存在 —— 修法：hermes kanban boards create $BOARD（--apply 自动建）"
     fi
     _cron="$("$HERMES_EXE" cron list 2>/dev/null || true)"
     if echo "$_cron" | grep -Eq "(^|[^a-zA-Z0-9_-])sentinel-${BOARD}([^a-zA-Z0-9_-]|$)"; then
@@ -389,13 +389,13 @@ for PROJ in "${PROJECTS[@]}"; do
     if echo "$_boards" | grep -q "$BOARD"; then
       echo "[apply] 看板 $BOARD 已存在，跳过"
     else
-      echo "[apply] 建看板：hermes kanban board create $BOARD"
-      if ! "$HERMES_EXE" kanban board create "$BOARD"; then
-        echo "✗ 建看板失败 —— 修法：手动跑 hermes kanban board create $BOARD"
+      echo "[apply] 建看板：hermes kanban boards create $BOARD"
+      if ! "$HERMES_EXE" kanban boards create "$BOARD"; then
+        echo "✗ 建看板失败 —— 修法：手动跑 hermes kanban boards create $BOARD"
       fi
     fi
   else
-    echo "✗ hermes 不可用，建不了看板 —— 修法：装好 Hermes 后手动跑 hermes kanban board create $BOARD"
+    echo "✗ hermes 不可用，建不了看板 —— 修法：装好 Hermes 后手动跑 hermes kanban boards create $BOARD"
   fi
 
   # 动作 5：哨兵包装壳 + cron（--with-cron 才做）

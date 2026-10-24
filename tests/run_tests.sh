@@ -8,6 +8,12 @@
 #     MSYS 绝对路径（/e/...）时被错误拼接
 #   - 临时文件用仓库内 .test-tmp/（已 gitignore）：部分受限环境对 /tmp
 #     下 mktemp 目录的清理有拦截，仓库内路径无此问题
+#
+# ⚠ 不可并发运行：本测试集共用仓库内 .test-tmp/ 与固定板名
+#   kit-p2-selftest-guards，两个实例同时跑会互相踩（现象：T7 的
+#   tick.log CRLF 断言、T8 的 root-level tick.log 断言、以及
+#   [10/10] 守卫分支随机失败）。同一时刻只跑一个实例；要并行验证
+#   请在独立的 git worktree 里跑。
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

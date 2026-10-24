@@ -309,7 +309,7 @@ v7() {
     ok "V7 看板存在：$BOARD"
   else
     fail "V7 看板 $BOARD 不存在\
-—— 修法：$HERMES_EXE kanban board create $BOARD  # 或核对 slug 拼写"
+—— 修法：$HERMES_EXE kanban boards create $BOARD  # 或核对 slug 拼写"
   fi
 }
 
