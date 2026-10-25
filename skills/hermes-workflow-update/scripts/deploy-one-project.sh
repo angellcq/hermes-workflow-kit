@@ -51,7 +51,11 @@ if [[ "$PRUNE" == "1" ]]; then
   for d in Hermes模板库 skills config scripts 通用角色库; do
     diff -rq -x '__pycache__' -x '*.pyc' -x '.test-tmp' "$PROJ/.hermes/$d" "$SRC/$d" 2>/dev/null \
       | sed -n "s|^Only in $PROJ/.hermes/\(.*\): \(.*\)$|$PROJ/.hermes/\1/\2|p" \
-      | while read -r f; do [[ -e "$f" ]] && rm -f "$f" && echo "[$NAME] 删除陈旧: ${f#$PROJ/.hermes/}"; done
+      | while read -r f; do
+          # config/wf.env 是机器本地灰度配置（kit 源里只有 wf.env.example），prune 不得删除
+          [[ "$f" == */config/wf.env ]] && { echo "[$NAME] 保护: ${f#$PROJ/.hermes/}"; continue; }
+          [[ -e "$f" ]] && rm -f "$f" && echo "[$NAME] 删除陈旧: ${f#$PROJ/.hermes/}"
+        done
   done
 fi
 
