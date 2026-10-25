@@ -1,7 +1,7 @@
 ---
 name: kanban-executor
 description: "Use when 看板任务需要自动认领/巡检/回收. Kanban 任务生命周期自动化."
-version: 1.1.2
+version: 1.1.3
 platforms: [windows, linux, macos]
 ---
 
@@ -132,6 +132,18 @@ hermes kanban --board <板> list --status ready --json
 2. **`--script` 只接受 `$HERMES_HOME/scripts/` 下的文件名**，不接受任意路径——项目里的 `sentinel_tick.py` 必须先放一个包装壳到 `$HERMES_HOME/scripts/`，再用文件名引用。
 
 另：`--no-agent`（纯脚本、不烧 token）+ `--deliver local`（每 5 分钟的 TICK_SUMMARY 不往聊天里发）是哨兵的常规组合；`deliver=local` 不等于不执行，只是不投递。
+
+#### 自测/冒烟类卡绝不上活板（哨兵会真的把它派出去）
+
+只要板上有活着的哨兵 cron（每 5 分钟一跳），在这块板上建的**任何 ready + `cc-*` 卡都会被真派单** —— 包括你只为验证链路而建的 `[SMOKE]`/自测卡。实测形态：测试脚本在目标板建卡 → 哨兵把卡交给 `dispatch-lane.sh` → 真拉起 claude lane 在目标项目里干活；即便之后按纪律 kill 掉，token 已烧、文件可能已被改。
+
+规矩三条：
+
+1. **冒烟/自测一律上一次性临时板**（名字带唯一后缀：`verify-smoke-<pid>`、`<repo>-selftest-<时间戳>`），跑完 `hermes kanban boards rm <临时板> --delete`；临时板没有 cron 订阅，天然安全。
+2. **用哨兵的 `--dry-run` 验证“看得见”，而不是真 tick**：`python scripts/card-sentinel.py --board <板> --dry-run` 会打印 `WOULD_DISPATCH <卡号> <assignee>` + `TICK_SUMMARY dispatched=N ...`，不写 state、不调派单器、不动卡。断言计划里出现该卡号即可。
+3. **临时板删掉后不要用同名再建**（会落到归档库或直接报错）——下一轮换新后缀，不要重建同名板。
+
+配套的 CLI 事实：任务 ID 形状是 `t_` + 8 位十六进制（共 10 字符，如 `t_a51d5d1a`）；写断言时正则要用 `t_[0-9a-f]{8}`，写 `{16,}` 之类会**静默抓不到**（变量为空 → 后续断言全错，看上去像“哨兵没看到卡”）。
 - Hermes 内置 worker 的心跳走 `hermes kanban --board <板> heartbeat <卡号>`（worker 侧发）
 - 每 15 分钟 cron 巡检（见兜底 watchdog）；`running` 卡超时判据 = claim TTL 15 分钟过期后仍未
   reclaim，或 `dispatch_stale_timeout_seconds`/`max_runtime_seconds` 命中
@@ -193,6 +205,10 @@ for t in <卡...>; do hermes kanban --board <板> archive "$t"; done
 
 **零产出判定**：`git status --short` 和 `git diff --stat HEAD` 均为空 → 委派失败 → STOP 转人工处置
 （先 `block --kind needs_input`，不自动重派——`consecutive_failures` 达 2 次即熔断，熔断后不再自动重派）。
+
+**本机编译口径（验收第 2 步）**：
+- `F:/Gitee.com/jt-dream-database`（WinForms）：`dotnet build <csproj> -p:OutDir=C:/Users/luchunqing/AppData/Local/Temp/<dir>/`（OutDir 必须重定向，否则 IIS Express/常驻窗体锁 bin）。基线 = 0 错误 10 警告（售后工具）。
+- `F:/Gitee.com/KSITest`（.NET Framework 4.8.1 WebForms）：`"/c/Program Files (x86)/Microsoft Visual Studio/18/BuildTools/MSBuild/Current/Bin/MSBuild.exe" "KIS公有云测试/KIS公有云测试/KIS公有云测试.csproj" /t:Build /p:VSToolsPath=<stub> /p:OutDir=<tmp>`。本机 BuildTools **未装 Web 工作负载**（v17.0/v18.0 下都没有 `WebApplications/Microsoft.WebApplication.targets`），直接编译报 MSB4226；建 `<stub>/WebApplications/Microsoft.WebApplication.targets` 内容为空的 `<Project/>` 即可跳过该导入——它只承载 web 发布目标，不影响 C# 编译结论。仓根无 .sln，须直接编 csproj。
 
 ## 命令速查（全集见 `hermes kanban --help`）
 
