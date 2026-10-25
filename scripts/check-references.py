@@ -163,6 +163,10 @@ def iter_repo_files():
             continue
         if {".deploy-backup", "plans", "_task"} & set(p.parts):
             continue
+        # tests/ 下是测试代码：fixture 里会**故意**写不存在的路径（例如造一个陈旧文件去验证
+        # prune 会删它），这类"断链"是测试数据而非文档失效引用 → 不参与断链检查。
+        if "tests" in p.parts and p.name != "run_tests.sh":
+            continue
         # _task/ 同 plans：任务卡是规划文档，会前向引用尚未交付的产物路径，不是失效引用
         # 方案/规划类文档（EVOLUTION_*/PLAN_*）会前向引用"尚未交付的产物路径"，
         # 那是待办清单而不是失效引用 → 不参与断链检查。产物落地后由代码/模板自身被检查。
