@@ -213,6 +213,6 @@ verify-deploy.sh 逐项 FAIL 时，第 7 步各项对应的手工命令对照表
 | V6 板名一致 | `grep '^WF_BOARD=' <项目根>/.hermes/config/wf.env` | 与 `--board` 相同 |
 | V7 看板存在 | `hermes kanban boards` | 输出含 `<板>` |
 | V8 哨兵 cron 存在 | `hermes cron list` | 输出含 `sentinel-<板>` |
-| V9 哨兵真能跑 | `bash "$HERMES_HOME/scripts/sentinel-<板>.sh"` 后 `tail -1 <项目根>/logs/tick.log` | 末行含 `rc=0` |
+| V9 哨兵真能跑 | `bash "$HERMES_HOME/scripts/sentinel-<板>.sh"` 后 `tail -1 <项目根>/.hermes/logs/tick.log` | 末行含 `rc=0` |
 | V10 无死亡误报 | `python "$HERMES_HOME/scripts/kanban-watchdog.py" --board <板>` | 无 `SENTINEL_DEAD` |
-| V11 冒烟（`--smoke`） | `hermes kanban --board <板> create "[SMOKE] test" --assignee cc-backend-developer` 后手动 tick 一轮 | tick.log `total_ready` ≥ 1；验完 `hermes kanban archive <id>` |
+| V11 冒烟（`--smoke`） | `hermes kanban boards create verify-smoke-manual` → 建 `[SMOKE]` 卡 → `python <项目>/.hermes/scripts/card-sentinel.py --board verify-smoke-manual --dry-run` | 输出含 `WOULD_DISPATCH <卡ID>`；验完归档卡 + `hermes kanban boards rm verify-smoke-manual --delete`。**禁止改跑真 tick**（会拉起 claude lane） |

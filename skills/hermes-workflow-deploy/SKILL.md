@@ -1,7 +1,7 @@
 ---
 name: hermes-workflow-deploy
 description: "Use when user says 部署工作流/装流程/换机部署 to a project."
-version: 2.0.0
+version: 2.0.1
 platforms: [windows, linux, macos]
 ---
 
@@ -91,9 +91,15 @@ bash <kit根>/scripts/verify-deploy.sh --project <项目根> --board <板名>
 - 覆盖原来的验收四件套：V1 仓库自检（`tests/run_tests.sh` 0 失败）、V2 `bootstrap-machine.sh`
   探测 `FAIL=0`、V3 `~/.claude/agents/cc-*.md` = 11、V4 全局件 md5 + `kanban-executor` version 一致、
   V5 项目 `.hermes/` 资产齐、V6 板名一致、V7 看板存在、V8 哨兵 cron、V9 哨兵真跑（rc=0）、
-  V10 watchdog 无 `SENTINEL_DEAD`。
-- 仅 `tests/run_tests.sh` 太慢时可加 `--skip-repo-tests`（V1 标 SKIP，不算失败）；
-  首台机器可加 `--smoke` 做端到端冒烟（建 `[SMOKE]` 卡 → tick → `total_ready` ≥ 1 → 自动归档）。
+  V10 watchdog 无 `SENTINEL_DEAD`、V11 冒烟（`--smoke` 才跑，见下）。
+- 两个跳过开关，都只标 SKIP、不算失败：
+  `--skip-repo-tests` 跳过 V1（`tests/run_tests.sh` 太慢时用）；
+  `--skip-watchdog` 跳过 V10（无 cron 的沙箱/CI、或 watchdog 还没部署时用）。
+- `--smoke` 做端到端冒烟，**安全设计**：在一次性临时板 `verify-smoke-<pid>` 上建 `[SMOKE]` 卡 →
+  跑 `card-sentinel.py --board <临时板> --dry-run`（**plan-only**，只打印 `WOULD_DISPATCH <卡ID>`，
+  不写 state、不调派单器）→ 归档卡 → 删板，全程 `trap` 兜底清理。
+  临时板没有任何 cron 订阅，所以目标板的活哨兵（每 5 分钟一跳）不会把冒烟卡当正常卡派给 lane。
+  **绝对不要**改成真 tick：真 tick 会拉起 claude lane，既烧 token 又可能改项目文件。
 - **流程**：先跑本脚本；对 FAIL 项再按下表（§4 对照表）修，修完重跑到 `0 失败` 才算部署完成。
   某项要手工复核时，命令对照表见仓库 `DEPLOY.md` §八「脚本不过时怎么手工查」。
 - 原四件套手工步骤（备查）：`bash tests/run_tests.sh` 全绿；`wf.env` 的 `WF_BOARD` 与看板 slug 一致；

@@ -40,14 +40,18 @@ cron 两条硬约束、归档消音、手动批次推进模式）的同时，全
   哨兵 cron、哨兵真跑 rc=0（tick.log 末行）、watchdog 无 `SENTINEL_DEAD`；每条 FAIL 带可粘贴修法，
   末尾 `═══ 验收：N 通过 / M 失败 ══`，有 FAIL 退 1。支持 `HERMES_BIN`/`CC_AGENTS_DIR`/`HERMES_HOME`
   测试钩子（与 bootstrap-machine.sh 同款约定）
-- `--smoke`：plan-only 冒烟——在板上建 `[SMOKE]` 卡（assignee `cc-backend-developer`）→ 跑哨兵
-  `card-sentinel.py --board <板> --dry-run`（**只打印计划，不写 state、不调派单器、不动卡**）→
-  断言计划里能看到该卡 → `hermes kanban archive` 归档；EXIT trap 保证无论成败都清理。
+- `--smoke`：plan-only 冒烟——在**一次性临时板 `verify-smoke-<pid>`** 上建 `[SMOKE]` 卡
+  （assignee `cc-backend-developer`）→ 跑哨兵 `card-sentinel.py --board <临时板> --dry-run`
+  （**只打印计划，不写 state、不调派单器、不动卡**）→ 断言计划里能看到该卡 → 归档卡 → 删临时板；
+  EXIT trap 保证无论成败都把卡和板都清理掉。用临时板的原因：目标板挂着活的哨兵 cron（每 5 分钟一跳），
+  建卡→归档的窗口会被真派单；临时板没有任何 cron 订阅，天然安全。
   **绝不用真 tick**：真 tick 会把 `[SMOKE]` 当正常卡派给 `dispatch-lane.sh`，真的拉起 claude lane
   （既烧 token 又可能改项目文件）——本机实测踩过一次，已 kill 并回退
-- 真机实测（hljjt 板）：`9 通过 / 0 失败`（V1 由 `--skip-repo-tests` 跳过）；首跑还抓出一处真实漂移
+- 新增 `--skip-watchdog`：跳过 V10（与 `--skip-repo-tests` 同语义，只标 SKIP 不算失败），
+  供 fixture / 无 cron 的沙箱环境用
+- 真机实测（hljjt 板）：带 `--smoke` **`10 通过 / 0 失败`（V1 SKIP）**；首跑还抓出一处真实漂移
   （全局 `kanban-executor` 1.1.1 未回并仓库，已并入 `b8cbd2c`）
-- **测试已入库**：`tests/test_verify_deploy.sh`（12 条断言；V1–V9 动态、V10/V11 静态），
+- **测试已入库**：`tests/test_verify_deploy.sh`（**13 条断言**；V1–V9 动态、V11 静态），
   已注册进 `tests/run_tests.sh` 容错注册块。设计要点：动态用例只跑 V1–V9（全部带
   `--skip-repo-tests --skip-watchdog`、不传 `--smoke`），V10 要真 watchdog + 真心跳、
   V11 要真哨兵读真板，fixture 伪造注定不稳，改为静态断言卡接线（T11 改计数式，
