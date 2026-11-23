@@ -116,6 +116,8 @@ bash <kit根>/scripts/verify-deploy.sh --project <项目根> --board <板名>
 | `claude --agent` 报错 | 角色没装进 `~/.claude/agents/`，或 claude 版本 < 2.1.300 | `bash scripts/install-claude-agents.sh`（§2 第 2 步）；`claude --version` 升级（§1 第 1 条） |
 | `cron create` 报 `unrecognized arguments: --every`（或把名字当 schedule） | schedule 是第一个位置参数，job 名用 `--name`，不是第九个 flag | `hermes cron create "every 5m" --no-agent --name sentinel-<板> --script sentinel-<板>.sh --deliver local`（§1 第 3 条） |
 | `cannot change to '/c/...'` | 给原生程序传了 MSYS 路径 | 改写 `C:/x/y` 盘符正斜杠（§1 第 5 条） |
+| `--check` 报「全局 watchdog md5 不一致（旧版）」但两文件明明同字节 | `md5sum` 是原生程序，反斜杠路径被 MSYS 当含特殊字符 → 整行加前缀 `\` 并转义，`cut -d' ' -f1` 拿到 `\<hash>` 恒不等 | P11.2 起统一走 `_md5()`（`to_native` + `cut` + `tr -d '\r'` + `sed 's/^\\//'`）；自己写脚本比对 hash 时照抄这串，别裸用 `md5sum`。空 hash 不能当"一致" |
+| 全局技能列表里多出一个 `kanban-executor.bak.<ts>` | 旧副本被 `mv` 到 `$HERMES_HOME/skills/devops/` **内部**，技能发现把它当新技能（同本名歧义、索引翻倍） | P11.2 起备份落 `$HERMES_HOME/.skill-backups/`；已污染的目录手工挪出去即可（`mv` 到 `.skill-backups/`） |
 
 ## §5 回滚
 

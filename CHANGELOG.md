@@ -20,6 +20,7 @@
   **T8** 旧技能副本必须备份到 `skills/` 之外且正本被更新；断言总数 10 → 12。
 - 真机效果：jt-dream-database 的 `bootstrap --check` 从 `OK=12 WARN=1` 变为 `OK=13 WARN=0 FAIL=0`；
   全局 `skills/` 下残留的 `.bak` 目录已挪进 `.skill-backups/`（`skills/` 下 bak 计数归零）。
+- `skills/hermes-workflow-deploy/SKILL.md` §4 换机失败对照表补两行：md5 假报警（`_md5`）与备份落错位置导致的技能列表污染。
 
 ---
 
