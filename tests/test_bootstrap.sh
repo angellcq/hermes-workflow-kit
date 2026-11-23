@@ -4,7 +4,7 @@
 #
 # ⚠ 绝对不许碰真实的 ~/.claude/agents、真实 $HERMES_HOME、真实 cron——
 #   HERMES_HOME/项目目录全用临时目录伪造；hermes 用 PATH 注入的 FAKE 假命令。
-# 6 条断言：
+# 8 条断言（T7 md5 反斜杠路径不误报；T8 技能备份落 skills/ 之外）：
 #   T1 默认（无 --apply）跑完：项目目录零写入（find|sort 前后一致）+ 输出含 OK/WARN/FAIL 计数行
 #   T2 --apply：wf.env 生成，WF_BOARD=传入板名，三条路径均为 C:/ 形式（不含 /c/）
 #   T3 --apply 二次运行：wf.env 内容不变（幂等），且存在 .wf.env.bak.* 备份
@@ -152,6 +152,36 @@ if [[ -f "$FAKE_HH/scripts/sentinel-$BOARD.sh" ]]; then
   ok "包装壳已生成：\$HERMES_HOME/scripts/sentinel-$BOARD.sh"
 else
   bad "包装壳未生成在 \$HERMES_HOME/scripts/ 下"
+fi
+
+echo "══ T7 反斜杠 HERMES_HOME 下 watchdog md5 不误报 ══"
+# 真机踩过：md5sum 是原生程序，反斜杠路径会让 MSYS 给整行加前缀 \ 并转义，
+# 于是 cut -d' ' -f1 拿到 "\<hash>" 恒不等于 hash → 同字节也报"旧版"。
+# 这里把同字节的 watchdog 放进反斜杠形态的 HERMES_HOME，必须判一致。
+cp "$ROOT/scripts/kanban-watchdog.py" "$FAKE_HH/scripts/kanban-watchdog.py"
+BACK_HH="$(printf '%s' "$FAKE_HH" | sed 's#/#\\#g')"
+T7_OUT=$(env "HERMES_HOME=$BACK_HH" "CC_AGENTS_DIR=$CC_AGENTS_DIR" \
+             "HERMES_BIN=$TMP/fakebin/hermes" "PATH=$TMPD/fakebin:$PATH" \
+             bash "$SCRIPT" --project "$PROJ" --board "$BOARD" 2>&1)
+if echo "$T7_OUT" | grep -q '与仓库副本 md5 一致' && ! echo "$T7_OUT" | grep -q 'md5 不一致'; then
+  ok "反斜杠路径判一致（$BACK_HH）"
+else
+  bad "反斜杠路径误判：$(echo "$T7_OUT" | grep -i watchdog | head -2)"
+fi
+
+echo "══ T8 旧技能副本备份落到 skills/ 之外 ══"
+# 真机踩过：备份成 skills/devops/kanban-executor.bak.<ts> 会被技能发现当成一个新技能
+# （与正本同名歧义、索引翻倍）。备份必须落到 $HERMES_HOME/.skill-backups/。
+mkdir -p "$FAKE_HH/skills/devops/kanban-executor"
+printf 'stale\n' > "$FAKE_HH/skills/devops/kanban-executor/SKILL.md"
+T8_OUT=$("${COMMON_ENV[@]}" bash "$SCRIPT" --project "$PROJ" --board "$BOARD" --apply 2>&1)
+STRAY=$(find "$FAKE_HH/skills" -maxdepth 3 -name '*bak*' 2>/dev/null | wc -l)
+BAK_HIT=$(find "$FAKE_HH/.skill-backups" -maxdepth 1 -name 'kanban-executor.bak.*' 2>/dev/null | wc -l)
+if [[ "$BAK_HIT" -ge 1 && "$STRAY" -eq 0 ]] \
+   && [[ "$(cat "$FAKE_HH/skills/devops/kanban-executor/SKILL.md")" != "stale" ]]; then
+  ok "备份落 .skill-backups/（$BAK_HIT 份），skills/ 下零 bak，正本已更新"
+else
+  bad "技能备份位置不对：.skill-backups=$BAK_HIT，skills/ 下 bak=$STRAY"
 fi
 
 echo ""

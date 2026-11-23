@@ -4,6 +4,25 @@
 
 ---
 
+## v5.0-P11.2（2026-11-23）— bootstrap 的 watchdog md5 假报警：反斜杠路径比对修正
+
+**背景（真机收口时发现）**：`bootstrap-machine.sh --check` 在全局 watchdog 与仓库副本**已同字节**时仍报
+`WARN 全局 watchdog 与仓库副本 md5 不一致（旧版）`，于是 `--apply` 每次都白备份一份 `.bak` 再覆盖。
+根因：`md5sum` 是原生程序，路径未过 `to_native`，反斜杠 Windows 路径被 MSYS coreutils 判定为「含特殊字符」，
+整行加前缀 `\` 并转义文件名，`cut -d' ' -f1` 拿到的是 `\<hash>` 而不是 hash → 恒不等。
+`scripts/verify-deploy.sh:220` 早有同类修复（V4 用 `to_native`），bootstrap 侧漏了。
+
+- `scripts/bootstrap-machine.sh`：新增 `_md5()`（`to_native` + `cut` + `tr -d '\r'` + `sed 's/^\\//'`），
+  探测（原 `:175`）、apply 的 watchdog（原 `:357`）与技能副本（原 `:376`）三处比对改用它；空 hash 不再判一致（防"读不到"假绿）。
+- 技能副本备份改落 `$HERMES_HOME/.skill-backups/`（原 `mv` 成 `skills/devops/kanban-executor.bak.<ts>`，
+  会被技能发现当成一个新技能 → 与正本同名歧义、索引翻倍；真机曾多出 `devops/kanban-executor.bak.20261123-165751`）。
+- `tests/test_bootstrap.sh`：**T7** 同字节 watchdog 放进**反斜杠形态**的 `HERMES_HOME` 必须判一致；
+  **T8** 旧技能副本必须备份到 `skills/` 之外且正本被更新；断言总数 10 → 12。
+- 真机效果：jt-dream-database 的 `bootstrap --check` 从 `OK=12 WARN=1` 变为 `OK=13 WARN=0 FAIL=0`；
+  全局 `skills/` 下残留的 `.bak` 目录已挪进 `.skill-backups/`（`skills/` 下 bak 计数归零）。
+
+---
+
 ## v5.0-P11.1（2026-11-23）— cx- 车道 Windows 沙箱修正：可写根收成单根
 
 **背景（首张 cx- 试单实测）**：`KsSnapshotRefresh_Form` 布局卡首次派给 Codex，工人在

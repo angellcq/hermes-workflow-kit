@@ -18,7 +18,7 @@
 #   1. 生成/补 <project>/.hermes/config/wf.env（不覆盖已有值，先备份 .wf.env.bak.<ts>）
 #   2. bash scripts/install-claude-agents.sh（装 cc-* 角色到 CC agents 目录）
 #   3. 拷全局件：kanban-watchdog.py → $HERMES_HOME/scripts/；
-#      skills/kanban-executor/ → $HERMES_HOME/skills/devops/（目标已存在先 .bak.<ts>）
+#      skills/kanban-executor/ → $HERMES_HOME/skills/devops/（目标已存在先备份到 $HERMES_HOME/.skill-backups/）
 #   4. 建看板（不存在才建）
 #   5. --with-cron：生成 $HERMES_HOME/scripts/sentinel-<board>.sh 包装壳并
 #      hermes cron create "every 5m" --no-agent --name sentinel-<board> \
@@ -171,8 +171,12 @@ fi
 # ── 探测：全局件（watchdog 副本 / 全局技能 / 全局心跳）──────────
 SRC_WATCHDOG="$ROOT/scripts/kanban-watchdog.py"
 DST_WATCHDOG="$HH/scripts/kanban-watchdog.py"
+# md5sum 是原生程序：路径必须先过 to_native（cygpath -m）。反斜杠 Windows 路径会让
+# MSYS coreutils 把文件名当含特殊字符→整行加前缀 \\ 并转义，cut -d' ' -f1 拿到的是
+# "\<hash>" 而不是 hash，于是永远判"不一致"假报警（真机实测：全局件已同字节仍 WARN）。
+_md5() { md5sum "$(to_native "$1")" 2>/dev/null | cut -d' ' -f1 | tr -d '\r' | sed 's/^\\//'; }
 if [[ -f "$DST_WATCHDOG" && -f "$SRC_WATCHDOG" ]] \
-   && [[ "$(md5sum "$DST_WATCHDOG" | cut -d' ' -f1)" == "$(md5sum "$SRC_WATCHDOG" | cut -d' ' -f1)" ]]; then
+   && [[ -n "$(_md5 "$DST_WATCHDOG")" && "$(_md5 "$DST_WATCHDOG")" == "$(_md5 "$SRC_WATCHDOG")" ]]; then
   p_ok "全局 watchdog：$DST_WATCHDOG（与仓库副本 md5 一致）"
 elif [[ -f "$DST_WATCHDOG" ]]; then
   p_warn "全局 watchdog 与仓库副本 md5 不一致（旧版）—— --apply 会先备份再覆盖：$DST_WATCHDOG"
@@ -350,7 +354,7 @@ fi
 # ── 动作 3：拷全局件（watchdog + kanban-executor 技能副本）──────
 if [[ -f "$SRC_WATCHDOG" ]]; then
   if [[ -f "$DST_WATCHDOG" ]] \
-     && [[ "$(md5sum "$DST_WATCHDOG" | cut -d' ' -f1)" != "$(md5sum "$SRC_WATCHDOG" | cut -d' ' -f1)" ]]; then
+     && [[ "$(_md5 "$DST_WATCHDOG")" != "$(_md5 "$SRC_WATCHDOG")" ]]; then
     cp "$DST_WATCHDOG" "$DST_WATCHDOG.bak.$TS"
     echo "[apply] 旧 watchdog 已备份：kanban-watchdog.py.bak.$TS"
   fi
@@ -367,14 +371,18 @@ fi
 
 SRC_SKILL="$ROOT/skills/kanban-executor"
 DST_SKILL_DIR="$HH/skills/devops/kanban-executor"
+SKILL_BAK_ROOT="$HH/.skill-backups"
 if [[ -d "$SRC_SKILL" ]]; then
   if [[ -f "$DST_SKILL_DIR/SKILL.md" ]] \
-     && [[ "$(md5sum "$DST_SKILL_DIR/SKILL.md" | cut -d' ' -f1)" == "$(md5sum "$SRC_SKILL/SKILL.md" | cut -d' ' -f1)" ]]; then
+     && [[ "$(_md5 "$DST_SKILL_DIR/SKILL.md")" == "$(_md5 "$SRC_SKILL/SKILL.md")" ]]; then
     echo "[apply] 全局技能副本已是最新，跳过"
   else
     if [[ -d "$DST_SKILL_DIR" ]]; then
-      mv "$DST_SKILL_DIR" "$DST_SKILL_DIR.bak.$TS"
-      echo "[apply] 旧技能副本已备份：kanban-executor.bak.$TS"
+      # 备份必须落在 skills/ 之外：留在 skills/devops/ 下会被技能发现当成
+      # 一个新技能（kanban-executor.bak.<ts>），与正本同名歧义、索引翻倍。
+      mkdir -p "$SKILL_BAK_ROOT"
+      mv "$DST_SKILL_DIR" "$SKILL_BAK_ROOT/kanban-executor.bak.$TS"
+      echo "[apply] 旧技能副本已备份：.skill-backups/kanban-executor.bak.$TS"
     fi
     mkdir -p "$HH/skills/devops"
     cp -r "$SRC_SKILL" "$DST_SKILL_DIR"
