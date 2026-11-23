@@ -17,7 +17,8 @@
 #   B9 ENABLE=0（角色文件在）→ 参数不含 --agent
 #   B10 PERMISSION_MODE=off  → 参数不含 --permission-mode
 #   B11 cx- 卡                 → 走 codex 车道（假 codex 被调、含 -s workspace-write、
-#                                TASK.md 经 stdin 传、claude 未被调、卡正常 done）
+#                                可写根收成单根的两个 -c、TASK.md 经 stdin 传、
+#                                claude 未被调、卡正常 done）
 #
 # ⚠ 路径形态陷阱（实测踩过）：传给**原生程序**（git、假执行器内的 git、
 # dispatch-lane.sh 的 project_dir 参数）的路径必须是 C:/... 形式；
@@ -305,6 +306,12 @@ if [[ "$RC" -eq 0 ]]; then ok "B11 退出码 0"; else bad "B11 退出码期望 0
 if [[ -s "$CODEX_CALL_LOG" ]]; then ok "B11 假 codex 被调用"; else bad "B11 假 codex 未被调用（cx- 卡没进 codex 车道）：$(cat "$B11_LOG")"; fi
 if grep -q -- "exec" "$CODEX_CALL_LOG" 2>/dev/null; then ok "B11 调用含 codex exec 子命令"; else bad "B11 调用缺 exec：$(cat "$CODEX_CALL_LOG" 2>/dev/null)"; fi
 if grep -q -- "-s workspace-write" "$CODEX_CALL_LOG" 2>/dev/null; then ok "B11 沙箱参数 -s workspace-write"; else bad "B11 沙箱参数缺失：$(cat "$CODEX_CALL_LOG" 2>/dev/null)"; fi
+if grep -q -- "sandbox_workspace_write.exclude_slash_tmp=true" "$CODEX_CALL_LOG" 2>/dev/null \
+   && grep -q -- "sandbox_workspace_write.exclude_tmpdir_env_var=true" "$CODEX_CALL_LOG" 2>/dev/null; then
+  ok "B11 可写根收成单根（Windows restricted-token 沙箱的硬前提）"
+else
+  bad "B11 缺单根修正参数（真机实测：三根会报 split writable root sets，工人 exec 全废）：$(cat "$CODEX_CALL_LOG" 2>/dev/null)"
+fi
 if grep -Eq -- " -$" "$CODEX_CALL_LOG" 2>/dev/null; then ok "B11 以 '-' 结尾（指令从 stdin 读）"; else bad "B11 缺 stdin 位置参数：$(cat "$CODEX_CALL_LOG" 2>/dev/null)"; fi
 if grep -q -- "--agent" "$CODEX_CALL_LOG" 2>/dev/null; then bad "B11 codex 不应收到 --agent：$(cat "$CODEX_CALL_LOG")"; else ok "B11 codex 未收到 --agent"; fi
 if [[ -s "$CODEX_STDIN_LOG" ]] && grep -q "## 车道" "$CODEX_STDIN_LOG" && grep -q "codex" "$CODEX_STDIN_LOG" && grep -q "B11 前端任务" "$CODEX_STDIN_LOG"; then

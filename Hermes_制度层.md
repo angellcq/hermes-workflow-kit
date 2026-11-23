@@ -256,8 +256,10 @@ python .hermes/scripts/pipeline.py \
 |---|---|---|
 | 文件域 | 后端服务、WinForm `*Form.cs` 业务逻辑、SQL、脚本 | 前端域：HTML/CSS/JS、Vue 前端脚本、WinForm `*.Designer.cs` 布局、`*.resx` |
 | 角色加载 | `--agent cc-<角色>` 真加载（`~/.claude/agents/`） | 无 subagent 机制：角色名以「## 角色」文本进 TASK.md，边界靠 `files_scope` |
-| 执行命令 | `claude -p … --agent … --output-format json` | `codex exec -s workspace-write -C <原生路径> - < TASK.md` |
+| 执行命令 | `claude -p … --agent … --output-format json` | `codex exec -s workspace-write -c sandbox_workspace_write.exclude_slash_tmp=true -c sandbox_workspace_write.exclude_tmpdir_env_var=true -C <原生路径> - < TASK.md`（两个 `-c` 是 Windows 硬前提，见下） |
 | 模型 | 用户在 cc-switch 里定 | 用户在 `~/.codex/config.toml` 里定；派单器**绝不传 `-m`** |
+
+**Windows 沙箱硬前提**（codex-cli 0.171.0 实测）：`workspace-write` 默认可写根集是 `[workdir, /tmp, $TMPDIR]` 三个，而 Windows 非提权 restricted-token 沙箱无法执行「split writable root sets」，`exec_command` 一律报 `UnsupportedOperation("windows unelevated restricted-token sandbox cannot enforce split writable root sets directly; refusing to run unsandboxed")` —— 工人读得到文件、`apply_patch` 也能改，但**任何 shell 命令（git status / dotnet build）都跑不了**，只会空转到超时。故派单器在 `workspace-write` 下固定附 `exclude_slash_tmp=true` 与 `exclude_tmpdir_env_var=true`，把可写根收成只有 workdir 的单根；隔离反而更紧（写入锁在项目目录内，守卫⑥的 git 快照判定不受影响）。
 
 **WinForm 分层（一卡只动一类文件，`files_scope` 必须声明）**：
 

@@ -4,6 +4,28 @@
 
 ---
 
+## v5.0-P11.1（2026-11-23）— cx- 车道 Windows 沙箱修正：可写根收成单根
+
+**背景（首张 cx- 试单实测）**：`KsSnapshotRefresh_Form` 布局卡首次派给 Codex，工人在
+`-s workspace-write` 下**跑不了任何 shell 命令**——读文件与 `apply_patch` 正常，但
+`exec_command` 每次都返回
+`UnsupportedOperation("windows unelevated restricted-token sandbox cannot enforce split writable root sets directly; refusing to run unsandboxed")`，
+导致 `git status` / `dotnet build` 全废，只会反复重试到超时（实测 4 分钟零改动，卡被迫 block）。
+根因：`workspace-write` 的默认可写根集是 `[workdir, /tmp, $TMPDIR]` **三个根**，
+Windows 非提权 restricted-token 沙箱不支持「split writable root sets」。
+
+- **修法**：`scripts/dispatch-lane.sh` 的 codex 分支在 `WF_CODEX_SANDBOX=workspace-write` 时固定追加
+  `-c sandbox_workspace_write.exclude_slash_tmp=true` 与
+  `-c sandbox_workspace_write.exclude_tmpdir_env_var=true`，把可写根收成只有 workdir 的单根。
+  实测（同机同时段）：收单根后 `exec_command` 正常、`git rev-parse` 与文件写入均通过。
+  隔离反而更紧——写入被锁在项目目录内，守卫⑥的 git 快照判定不受影响。
+- 为什么不换 `danger-full-access`：那会取消沙箱，改动可落到仓库外，守卫⑥的产出判定失去基准。
+- 文档：`Hermes_制度层.md` §6.8 执行命令行 + 新增「Windows 沙箱硬前提」段；
+  `config/wf.env.example` 的 `WF_CODEX_SANDBOX` 处补同一段警示。
+- 测试：`tests/test_dispatch_guards.sh` B11 新增断言（两个 `-c` 必须出现在 codex 调用参数里）。
+
+---
+
 ## v5.0-P11（2026-11-23）— 双车道：`cc-`（Claude Code）/ `cx-`（Codex），前端域整体移交 Codex
 
 **背景**：前端域（HTML/CSS/JS、Vue 前端脚本、WinForm 界面布局）此前没有独占执行体，`cc-frontend-developer`

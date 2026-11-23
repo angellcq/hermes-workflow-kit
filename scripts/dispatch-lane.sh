@@ -310,8 +310,21 @@ EOF
     fi
     local codex_dir
     codex_dir="$(py_native_path "$project_dir")"
+    # Windows 沙箱硬约束（codex-cli 0.171.0 实测，2026-11-23）：workspace-write 的默认
+    # 可写根集是 [workdir, /tmp, $TMPDIR] 三个，而 Windows 非提权 restricted-token 沙箱
+    # 无法执行"split writable root sets"，exec_command 一律报
+    #   UnsupportedOperation("windows unelevated restricted-token sandbox cannot
+    #   enforce split writable root sets directly; refusing to run unsandboxed")
+    # → 工人连 git status 都跑不了、apply_patch 之外的能力全废，只会空转到超时。
+    # 收成单根（只剩 workdir，不含 /tmp 与 $TMPDIR）后 exec 恢复正常，且隔离更紧：
+    # 写入被锁在项目目录内，派单器守卫⑥的 git 快照判定依旧成立。
+    local codex_extra=()
+    if [[ "$WF_CODEX_SANDBOX" == "workspace-write" ]]; then
+      codex_extra=(-c sandbox_workspace_write.exclude_slash_tmp=true
+                   -c sandbox_workspace_write.exclude_tmpdir_env_var=true)
+    fi
     log "派单 [task=$task_id lane=codex agent=$agent_name board=$BOARD workdir=$project_dir sandbox=$WF_CODEX_SANDBOX]"
-    "$CODEX_BIN" exec -s "$WF_CODEX_SANDBOX" -C "$codex_dir" - < "$task_md"
+    "$CODEX_BIN" exec -s "$WF_CODEX_SANDBOX" "${codex_extra[@]}" -C "$codex_dir" - < "$task_md"
     worker_rc=$?
   else
     log "派单 [task=$task_id lane=claude agent=$agent_name board=$BOARD workdir=$project_dir]"
