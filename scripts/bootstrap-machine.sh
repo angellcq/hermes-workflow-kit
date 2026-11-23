@@ -378,7 +378,7 @@ if [[ -d "$SRC_SKILL" ]]; then
     echo "[apply] 全局技能副本已是最新，跳过"
   else
     if [[ -d "$DST_SKILL_DIR" ]]; then
-      # 备份必须落在 skills/ 之外：留在 skills/devops/ 下会被技能发现当成
+      # 备份必须落在 $HH/skills/ 之外：留在 $HH/skills/devops/ 下会被技能发现当成
       # 一个新技能（kanban-executor.bak.<ts>），与正本同名歧义、索引翻倍。
       mkdir -p "$SKILL_BAK_ROOT"
       mv "$DST_SKILL_DIR" "$SKILL_BAK_ROOT/kanban-executor.bak.$TS"

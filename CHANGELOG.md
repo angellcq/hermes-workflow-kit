@@ -14,7 +14,7 @@
 
 - `scripts/bootstrap-machine.sh`：新增 `_md5()`（`to_native` + `cut` + `tr -d '\r'` + `sed 's/^\\//'`），
   探测（原 `:175`）、apply 的 watchdog（原 `:357`）与技能副本（原 `:376`）三处比对改用它；空 hash 不再判一致（防"读不到"假绿）。
-- 技能副本备份改落 `$HERMES_HOME/.skill-backups/`（原 `mv` 成 `skills/devops/kanban-executor.bak.<ts>`，
+- 技能副本备份改落 `$HERMES_HOME/.skill-backups/`（原 `mv` 成 `$HERMES_HOME/skills/devops/kanban-executor.bak.<ts>`，
   会被技能发现当成一个新技能 → 与正本同名歧义、索引翻倍；真机曾多出 `devops/kanban-executor.bak.20261123-165751`）。
 - `tests/test_bootstrap.sh`：**T7** 同字节 watchdog 放进**反斜杠形态**的 `HERMES_HOME` 必须判一致；
   **T8** 旧技能副本必须备份到 `skills/` 之外且正本被更新；断言总数 10 → 12。
