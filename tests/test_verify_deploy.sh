@@ -84,10 +84,12 @@ setup_hh() {
   printf '#!/usr/bin/env bash\nexit 0\n' > "$FAKE_HH/scripts/sentinel-$BOARD.sh"
 }
 
-# ── fixture：V3 的 11 个 cc-*.md（真实 agents 目录绝不碰）──
+# ── fixture：V3 的 cc-*.md（数量 = 仓库 通用角色库 顶层角色数；真实 agents 目录绝不碰）──
 setup_agents() {
   rm -rf "$TMP/agents"; mkdir -p "$TMP/agents"
-  local i; for i in $(seq 1 11); do
+  local n i
+  n="$(ls -1 "$ROOT"/通用角色库/*.md 2>/dev/null | wc -l | tr -d ' ')"; [[ "$n" -gt 0 ]] || n=10
+  for i in $(seq 1 "$n"); do
     printf -- '---\nname: cc-dummy%s\ndescription: 测试占位\n---\n' "$i" > "$TMP/agents/cc-dummy$i.md"
   done
 }

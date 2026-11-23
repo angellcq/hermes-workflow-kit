@@ -35,6 +35,10 @@ from pathlib import Path
 IN_PROGRESS_TIMEOUT = int(os.environ.get("KANBAN_WATCHDOG_TIMEOUT", 8 * 3600))
 LANE_LOG_STALE = int(os.environ.get("KANBAN_WATCHDOG_LANE_STALE", 2 * 3600))
 SENTINEL_DEAD_SECONDS = int(os.environ.get("WF_SENTINEL_DEAD_SECONDS", 900))
+# hermes CLI 冷启动本机实测下限 ~21s（解释器 8s + import 13s），负载下可到 130s+；
+# 原 60s 上限会让 monitor 间歇抛 WATCHDOG_ERROR TimeoutExpired（2026-10-26 实测定型）。
+# cron 侧脚本预算 3600s，放宽到 240s 仍安全；WF_CLI_TIMEOUT 可覆盖。
+CLI_TIMEOUT = int(os.environ.get("WF_CLI_TIMEOUT", 240))
 
 TERMINAL_STATUSES = {"done", "archived", "cancelled"}
 
@@ -45,10 +49,16 @@ BRIDGE_TASK_BASE = Path(
     )
 )
 
-# 哨兵工人的 assignee 前缀（P3B 新增）。卡必须是 cc-<角色> 才归 cc- 哨兵管；
-# 真实 Hermes profile 名的卡会被网关内置 dispatcher 抢走（profile_exists 为真
-# → spawn Hermes worker），与 cc- 哨兵双跑同一张卡、双写同一批文件。
-WF_AGENT_PREFIX = os.environ.get("WF_AGENT_PREFIX", "cc-")
+# 哨兵工人的 assignee 前缀（P3B 新增；P11 起支持多车道前缀 cc-/cx-，逗号可配）。
+# 卡必须是 cc-<角色>（claude 车道）或 cx-<角色>（codex 车道）才归哨兵管；真实 Hermes
+# profile 名的卡会被网关内置 dispatcher 抢走（profile_exists 为真 → spawn Hermes worker），
+# 与哨兵双跑同一张卡、双写同一批文件。
+# 注意：wf.env 里 WF_AGENT_PREFIX=cc-,cx- 是逗号列表，直接 startswith(单串) 恒 False
+# → 全部卡误判漂移，所以这里与 card-sentinel.py 用同一套拆元组的逻辑。
+def _split_prefixes(raw: str) -> tuple:
+    return tuple(p.strip() for p in raw.split(",") if p.strip())
+
+WF_AGENT_PREFIXES = _split_prefixes(os.environ.get("WF_AGENT_PREFIX", "cc-,cx-")) or ("cc-",)
 
 # 哨兵状态文件（P3B 新增）。sentinel_tick.py 每 tick touch 它；
 # watchdog 按 mtime 判哨兵是否还活着。测试用 WF_STATE_FILE 指到临时目录。
@@ -108,7 +118,7 @@ def board_lines(board: str | None) -> list[str]:
     cmd = [find_hermes(), "kanban", "list", "--json"]
     if board:
         cmd = [cmd[0], "kanban", "--board", board, "list", "--json"]
-    out = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    out = subprocess.run(cmd, capture_output=True, text=True, timeout=CLI_TIMEOUT)
     if out.returncode != 0:
         return [f"WATCHDOG_ERROR kanban_list exit={out.returncode}"]
     try:
@@ -125,7 +135,7 @@ def board_lines(board: str | None) -> list[str]:
     try:
         assignees_out = subprocess.run(
             [find_hermes(), "kanban", "assignees", "--json"],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, timeout=CLI_TIMEOUT,
         )
         if assignees_out.returncode == 0:
             for a in json.loads(assignees_out.stdout):
@@ -144,11 +154,11 @@ def board_lines(board: str | None) -> list[str]:
             # P3B 新增 ASSIGNEE_DRIFT（与上面 CLAIM_PENDING 有意并存，同一张卡可两行）：
             # CLAIM_PENDING 说"没人认领"，ASSIGNEE_DRIFT 说"有被网关抢单风险"，
             # 语义不同、处置不同（前者补派 lane，后者立即改 assignee）。
-            # 命中：assignee 为空 / 不以 cc- 开头 / 是真实 Hermes profile 名。
+            # 命中：assignee 为空 / 不以车道前缀开头（cc- 或 cx-）/ 是真实 Hermes profile 名。
             assignee = t.get("assignee") or ""
             drift = (
                 not assignee
-                or not assignee.startswith(WF_AGENT_PREFIX)
+                or not assignee.startswith(WF_AGENT_PREFIXES)
                 or assignee in real_profiles
             )
             if drift:
@@ -210,7 +220,7 @@ def diagnostics_lines(board: str | None) -> list[str]:
         cmd += ["--board", board]
     cmd += ["diagnostics", "--json"]
     try:
-        out = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=CLI_TIMEOUT)
     except (subprocess.TimeoutExpired, OSError):
         return []
     if out.returncode != 0:

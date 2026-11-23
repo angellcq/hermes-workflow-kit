@@ -48,12 +48,14 @@ else
 fi
 
 echo "══ [3/10] 角色动态加载冒烟 ══"
+# 期望值取 通用角色库/ 顶层 .md 数（不写死）：角色库升降级（如 P11 frontend-developer 移入 deprecated/）时这条自动跟随
+WANT_ROLES=$(ls -1 "$ROOT"/通用角色库/*.md 2>/dev/null | wc -l | tr -d ' '); [[ "$WANT_ROLES" -gt 0 ]] || WANT_ROLES=10
 ROLES_OUT=$(CLAUDE_AGENTS_DIR="通用角色库" bash scripts/agent-bridge.sh roles 2>/dev/null)
 COUNT=$(echo "$ROLES_OUT" | grep -cE '^[a-z][a-z-]+[[:space:]]')
-if [[ "$COUNT" -eq 11 ]]; then
-  ok "角色库加载 11 个（通用角色库，deprecated/ 不计）"
+if [[ "$COUNT" -eq "$WANT_ROLES" ]]; then
+  ok "角色库加载 $COUNT 个（通用角色库，deprecated/ 不计）"
 else
-  bad "预期 11 个角色（v5.0 起 5 个 C 级移入 deprecated/），实际 $COUNT"
+  bad "预期 $WANT_ROLES 个角色（＝通用角色库顶层 .md 数），实际 $COUNT"
 fi
 # 块格式 description 兼容（临时目录构造 description: | 样例）
 TD="$ROOT/.test-tmp"; mkdir -p "$TD"
@@ -143,7 +145,7 @@ rm -f "$TP2/pyproject.toml"; rmdir "$TP2" 2>/dev/null; rmdir "$ROOT/.test-tmp" 2
 echo "══ [9/10] agent-bridge --json 输出契约 ══"
 ROLES_JSON=$(CLAUDE_AGENTS_DIR="通用角色库" bash scripts/agent-bridge.sh roles --json 2>/dev/null)
 if echo "$ROLES_JSON" | grep -q '"name": "backend-developer"' && echo "$ROLES_JSON" | grep -q '"description"'; then
-  ok "roles --json（11 角色 JSON 数组）"
+  ok "roles --json（角色 JSON 数组含 name/description）"
 else
   bad "roles --json 输出异常"
 fi

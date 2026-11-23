@@ -34,8 +34,8 @@ bash "$K"/bootstrap-machine.sh --project <项目根> --board <板名> --apply  #
 ## §1 v5.0 五条硬事实（写错就装不成，逐条给验证命令）
 
 1. **`claude --version` ≥ 2.1.300**，否则 `claude --agent` 不认子代理。验证：`claude --version`，低于阈值先升级再继续，装了角色也白装。
-2. **`~/.claude/agents/` 里应有 11 个 `cc-*.md`**（不是 16——5 个 C 级角色已移入 `deprecated/`，不再装成 agent）。
-   验证：`ls ~/.claude/agents/cc-*.md | wc -l`，必须等于 **11**；多出来的顶层副本是陈旧文件，删掉。
+2. **`~/.claude/agents/` 里的 `cc-*.md` 数量 = `通用角色库/` 顶层角色数**（现为 10：A 级 7 + B 级 3；6 个 C 级/重叠角色已移入 `deprecated/`，不再装成 agent）。
+   验证：`ls ~/.claude/agents/cc-*.md | wc -l` 应等于 `ls 通用角色库/*.md | wc -l`；两者不等时多出来的是陈旧副本，删掉；少则重装。
 3. **`hermes cron create` 的 schedule 是第一个位置参数**（没有 `--every` 这种 flag），job 名用 `--name`，
    `--script` **只认 `$HERMES_HOME/scripts/` 下的文件名**（不收路径）→ 哨兵包装壳必须先拷进
    `$HERMES_HOME/scripts/`，再挂 cron。
@@ -60,7 +60,7 @@ bash "$K"/bootstrap-machine.sh --project <项目根> --board <板名> --apply  #
    ```bash
    bash scripts/install-claude-agents.sh --dry-run   # 先看将要做什么
    bash scripts/install-claude-agents.sh             # 加 cc- 前缀、改写 frontmatter name、幂等
-   ls ~/.claude/agents/cc-*.md | wc -l   # 期望 11
+   ls ~/.claude/agents/cc-*.md | wc -l   # 期望 10（＝通用角色库顶层 .md 数）
    ```
    角色库源文件是裸名（`backend-developer.md` 等，无 `cc-` 前缀），**不能用 `cp` 直装**——CC 按
    frontmatter `name:` 匹配 agent，直接 cp 过去 `claude --agent cc-<角色>` 必报找不到。
@@ -89,7 +89,7 @@ bash <kit根>/scripts/verify-deploy.sh --project <项目根> --board <板名>
 
 - **退出码**：0 = 验收全过；1 = 有 FAIL 项（每条 `✗ Vn ... —— 修法：<可粘贴命令>`，逐条修完重跑）。
 - 覆盖原来的验收四件套：V1 仓库自检（`tests/run_tests.sh` 0 失败）、V2 `bootstrap-machine.sh`
-  探测 `FAIL=0`、V3 `~/.claude/agents/cc-*.md` = 11、V4 全局件 md5 + `kanban-executor` version 一致、
+  探测 `FAIL=0`、V3 `~/.claude/agents/cc-*.md` = 通用角色库顶层角色数（现 10）、V4 全局件 md5 + `kanban-executor` version 一致、
   V5 项目 `.hermes/` 资产齐、V6 板名一致、V7 看板存在、V8 哨兵 cron、V9 哨兵真跑（rc=0）、
   V10 watchdog 无 `SENTINEL_DEAD`、V11 冒烟（`--smoke` 才跑，见下）。
 - 两个跳过开关，都只标 SKIP、不算失败：
@@ -111,7 +111,7 @@ bash <kit根>/scripts/verify-deploy.sh --project <项目根> --board <板名>
 
 | 症状 | 真因 | 修法 |
 |---|---|---|
-| `total_ready=0` 永远为 0 | 板名不一致（看板 slug ≠ `WF_BOARD`）或 assignee 无 `cc-` 前缀 | 对齐 slug 与 `wf.env`；卡片的 assignee 改成 `cc-*` 角色名（`~/.claude/agents/` 里 11 个之一） |
+| `total_ready=0` 永远为 0 | 板名不一致（看板 slug ≠ `WF_BOARD`）或 assignee 无车道前缀（`cc-`/`cx-`） | 对齐 slug 与 `wf.env`；卡片的 assignee 改成 `cc-*`（业务，claude 车道）或 `cx-*`（前端，codex 车道）角色名（`~/.claude/agents/` 里 10 个之一，cx- 不装 agent） |
 | `SENTINEL_DEAD no-state` | 哨兵没跑过一次，或包装壳 tick 成功后没补 touch `$HERMES_HOME/logs/sentinel_state.json` 全局心跳 | 先手动跑一次 `sentinel_tick.py`（§3 第 3 条）；检查包装壳是否补了全局心跳（§1 第 4 条） |
 | `claude --agent` 报错 | 角色没装进 `~/.claude/agents/`，或 claude 版本 < 2.1.300 | `bash scripts/install-claude-agents.sh`（§2 第 2 步）；`claude --version` 升级（§1 第 1 条） |
 | `cron create` 报 `unrecognized arguments: --every`（或把名字当 schedule） | schedule 是第一个位置参数，job 名用 `--name`，不是第九个 flag | `hermes cron create "every 5m" --no-agent --name sentinel-<板> --script sentinel-<板>.sh --deliver local`（§1 第 3 条） |

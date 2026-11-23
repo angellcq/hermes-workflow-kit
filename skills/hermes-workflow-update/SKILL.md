@@ -85,7 +85,7 @@ metadata:
    > 为什么不用清空重建：`rm -rf "PROJ/.hermes/<目录>"` 会被 Hermes 安全层判为破坏性操作并**阻塞等用户确认**（超时即视为未同意、命令不执行）；tar 管道在实测中正常放行。若用户明确要求"删源即删目标"才需要 `rm -rf`，那时用 `clarify` 先拿到同意。
 
 3b. **套件内移动/删除资产时，tar 不会替你删目标旧副本 —— 必须显式清理**。`tar -x` 只覆盖同名路径、新增新文件，**目标里源已经没有的文件一律留着**。
-   <!-- v5.0-P8 --> v5.0 实例：5 个 C 级角色移入 `通用角色库/deprecated/` 后，目标顶层还留 5 个陈旧 md，`agent-bridge.sh roles` / agent 扫描就数出 16 个（v5.0 正确值是 **11** 个 `cc-*.md`），「角色库加载 N 个」断言直接假红。做法：`--prune` 模式按目录比对找 `Only in PROJ` 的文件逐个 `rm -f`（**逐个具体文件，不整目录 rm -rf，前者能过安全层后者会被拦**），如 `rm -f "PROJ/.hermes/通用角色库/<旧角色名>.md"`（deprecated/ 子目录里的副本保留，顶层同名副本删掉）；清理后数量断言才与源一致（`ls *.md | wc -l` = 11）。
+   <!-- v5.0-P8 --> v5.0 实例：5 个 C 级角色移入 `通用角色库/deprecated/` 后，目标顶层还留 5 个陈旧 md，`agent-bridge.sh roles` / agent 扫描就数出 16 个（v5.0 正确值是 **10** 个 `cc-*.md`，P11 起 `frontend-developer` 也进了 deprecated），「角色库加载 N 个」断言直接假红。做法：`--prune` 模式按目录比对找 `Only in PROJ` 的文件逐个 `rm -f`（**逐个具体文件，不整目录 rm -rf，前者能过安全层后者会被拦**），如 `rm -f "PROJ/.hermes/通用角色库/<旧角色名>.md"`（deprecated/ 子目录里的副本保留，顶层同名副本删掉）；清理后数量断言才与源一致（`ls *.md | wc -l` = 10）。
 4. **单文件覆盖**（含去下划线重命名）：
    ```bash
    cp "SRC/Hermes_制度层.md" "PROJ/.hermes/Hermes制度层.md"
@@ -109,7 +109,7 @@ metadata:
    K=<kit根>/scripts
    bash "$K"/bootstrap-machine.sh --check --project <项目根> --board <板名>
    ```
-   确认 v5.0 接线没断：角色 11 个 `cc-*.md`、`wf.env` 与看板 slug 一致、哨兵心跳正常（详见 `hermes-workflow-deploy` §0/§3）。若本次更新连带重挂哨兵 cron（需拍板类），用 `hermes cron create "every 5m" --no-agent --name sentinel-<板> --script sentinel-<板>.sh --deliver local`——schedule 是第一个位置参数，job 名走 `--name`；`--script` 只认 `$HERMES_HOME/scripts/` 下的文件名（包装壳必须先放进去），`--no-agent` 纯脚本不烧 token。输出有 FAIL → 按 deploy 技能 §0 对照表修完再收工；这一步跳过 = 「更新成功」但哨兵永远不会派单（`total_ready=0`）。
+   确认 v5.0 接线没断：角色 10 个 `cc-*.md`（＝`通用角色库/` 顶层角色数）、`wf.env` 与看板 slug 一致、哨兵心跳正常（详见 `hermes-workflow-deploy` §0/§3）。若本次更新连带重挂哨兵 cron（需拍板类），用 `hermes cron create "every 5m" --no-agent --name sentinel-<板> --script sentinel-<板>.sh --deliver local`——schedule 是第一个位置参数，job 名走 `--name`；`--script` 只认 `$HERMES_HOME/scripts/` 下的文件名（包装壳必须先放进去），`--no-agent` 纯脚本不烧 token。输出有 FAIL → 按 deploy 技能 §0 对照表修完再收工；这一步跳过 = 「更新成功」但哨兵永远不会派单（`total_ready=0`）。
 
 7. **全局件同步（只在用户明确同意后做，属核心原则 4 第②类）**。顺序固定，不可跳步：
 

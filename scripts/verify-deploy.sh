@@ -192,15 +192,17 @@ v2() {
   fi
 }
 
-# ── V3 角色已装：cc-*.md 数量 == 11 ──
+# ── V3 角色已装：cc-*.md 数量 == 通用角色库顶层角色数（以源目录为真值，数量不写死）──
 v3() {
-  local n
+  local n want
+  want="$(ls -1 "$REPO_ROOT"/通用角色库/*.md 2>/dev/null | wc -l | tr -d ' ')"
+  [[ "$want" -gt 0 ]] || want=10
   n="$(find "$AGENTS_DIR" -maxdepth 1 -name 'cc-*.md' -type f 2>/dev/null | wc -l | tr -d ' ')"
-  if [[ "$n" -eq 11 ]]; then
-    ok "V3 CC 角色已装（$(to_native "$AGENTS_DIR") 下 cc-*.md = 11）"
+  if [[ "$n" -eq "$want" ]]; then
+    ok "V3 CC 角色已装（$(to_native "$AGENTS_DIR") 下 cc-*.md = $n，与通用角色库顶层 $want 个一致）"
   else
-    fail "V3 CC 角色数量为 $n，应 11（$AGENTS_DIR）\
-—— 修法：bash scripts/install-claude-agents.sh  # 幂等重装 11 个 cc-*.md"
+    fail "V3 CC 角色数量为 $n，应 $want（$AGENTS_DIR）\
+—— 修法：bash scripts/install-claude-agents.sh  # 幂等重装 $want 个 cc-*.md"
   fi
 }
 
@@ -250,14 +252,18 @@ v5() {
 —— 修法：跑 DEPLOY.md §四 或 bootstrap-machine.sh --apply 重铺资产"
     return 0
   fi
-  local n11 n5
+  local n11 n5 want11 want5
+  want11="$(ls -1 "$REPO_ROOT"/通用角色库/*.md 2>/dev/null | wc -l | tr -d ' ')"
+  want5="$(ls -1 "$REPO_ROOT"/通用角色库/deprecated/*.md 2>/dev/null | wc -l | tr -d ' ')"
+  [[ "$want11" -gt 0 ]] || want11=10
+  [[ "$want5" -gt 0 ]] || want5=6
   n11="$(find "$(to_native "$PH/通用角色库")" -maxdepth 1 -name '*.md' -type f 2>/dev/null | wc -l | tr -d ' ')"
   n5="$(find "$(to_native "$PH/通用角色库/deprecated")" -maxdepth 1 -name '*.md' -type f 2>/dev/null | wc -l | tr -d ' ')"
-  if [[ "$n11" -eq 11 && "$n5" -eq 5 ]]; then
-    ok "V5 项目资产齐（五目录 + 制度层 + USAGE；通用角色库=$n11，deprecated=$n5）"
+  if [[ "$n11" -eq "$want11" && "$n5" -eq "$want5" ]]; then
+    ok "V5 项目资产齐（五目录 + 制度层 + USAGE；通用角色库=$n11/$want11，deprecated=$n5/$want5）"
   else
-    fail "V5 角色库数量不对：通用角色库=$n11（应 11），deprecated=$n5（应 5）\
-—— 修法：rsync/cp 仓库 通用角色库/ → $(to_native "$PH/通用角色库/") 后，把顶层 5 个旧副本逐文件 rm -f（进 deprecated/，别整目录删）"
+    fail "V5 角色库数量不对：通用角色库=$n11（应 $want11），deprecated=$n5（应 $want5）\
+—— 修法：rsync/cp 仓库 通用角色库/ → $(to_native "$PH/通用角色库/") 后，把顶层的旧副本逐文件 rm -f（进 deprecated/，别整目录删）"
   fi
 }
 

@@ -16,6 +16,8 @@
 #   B8 agents 目录无该角色   → 参数不含 --agent；日志含「角色加载：跳过」；卡仍 done
 #   B9 ENABLE=0（角色文件在）→ 参数不含 --agent
 #   B10 PERMISSION_MODE=off  → 参数不含 --permission-mode
+#   B11 cx- 卡                 → 走 codex 车道（假 codex 被调、含 -s workspace-write、
+#                                TASK.md 经 stdin 传、claude 未被调、卡正常 done）
 #
 # ⚠ 路径形态陷阱（实测踩过）：传给**原生程序**（git、假执行器内的 git、
 # dispatch-lane.sh 的 project_dir 参数）的路径必须是 C:/... 形式；
@@ -94,6 +96,30 @@ esac
 FAKEEOF
 chmod +x "$FAKE_CLAUDE"
 
+# ── 假 codex（cx- 车道执行器替身）：记录参数 + 把 stdin 落盘；commit 模式写文件并提交 ──
+# 断言点：codex 车道必须走 `exec -s <sandbox> -C <dir> -`，且任务卡经 **stdin** 传入
+# （不是内联参数）；claude 车道那边不能被误调。
+FAKE_CODEX="$TMP/fake-codex.sh"
+CODEX_CALL_LOG="$TMP/fake-codex.calls"
+CODEX_STDIN_LOG="$TMP/fake-codex.stdin"
+cat > "$FAKE_CODEX" <<'FAKEEOF'
+#!/usr/bin/env bash
+# 假 codex：$* 记到 $FAKE_CODEX_CALLS，stdin 全文记到 $FAKE_CODEX_STDIN
+set -u
+echo "ARGS: $*" >> "${FAKE_CODEX_CALLS:?FAKE_CODEX_CALLS 未设置}"
+cat > "${FAKE_CODEX_STDIN:?FAKE_CODEX_STDIN 未设置}"
+case "${FAKE_CODEX_MODE:-none}" in
+  commit)
+    echo "fake codex output $(date +%s%N)" > "${FAKE_CLAUDE_REPO:?}/codex-output.txt"
+    git -C "${FAKE_CLAUDE_REPO:?}" add -A
+    git -C "${FAKE_CLAUDE_REPO:?}" -c user.name=fake -c user.email=fake@t commit -m "fake codex output" >/dev/null 2>&1
+    exit 0 ;;
+  fail7) exit 7 ;;
+  *)     exit 0 ;;
+esac
+FAKEEOF
+chmod +x "$FAKE_CODEX"
+
 # ── 前置环境：一次性看板 + 一次性 git 仓库 ──
 setup_env() {
   hermes kanban boards create "$TEST_BOARD" >/dev/null 2>&1 || true
@@ -114,7 +140,7 @@ setup_env() {
 cleanup_env() {
   # 归档并删除测试板（board rm 是归档式删除，不污染任何正式板）
   hermes kanban boards rm "$TEST_BOARD" >/dev/null 2>&1 || true
-  rm -rf "$TMP/repo" "$FAKE_CLAUDE" "$CALL_LOG"
+  rm -rf "$TMP/repo" "$FAKE_CLAUDE" "$FAKE_CODEX" "$CALL_LOG" "$CODEX_CALL_LOG" "$CODEX_STDIN_LOG" "$TMP/b11.log"
   rmdir "$TMP" 2>/dev/null || true
   rmdir "$ROOT/.test-tmp" 2>/dev/null || true
 }
@@ -263,6 +289,31 @@ OUT=$(FAKE_CLAUDE_MODE=commit CLAUDE_BIN="$FAKE_CLAUDE" WF_BOARD="$TEST_BOARD" W
 RC=$?
 if grep -- "--permission-mode" "$CALL_LOG" >/dev/null 2>&1; then bad "B10 不应传 --permission-mode：$(cat "$CALL_LOG")"; else ok "B10 不传 --permission-mode"; fi
 if [[ "$RC" -eq 0 ]]; then ok "B10 退出码 0"; else bad "B10 退出码期望 0，实际 $RC；输出：$OUT"; fi
+
+echo "── B11 cx- 卡走 codex 车道：沙箱 + TASK.md 经 stdin ──"
+B11=$(new_card "B11 cx 车道前端卡")
+: > "$CALL_LOG"; : > "$CODEX_CALL_LOG"; : > "$CODEX_STDIN_LOG"
+B11_LOG="$TMP/b11.log"
+FAKE_CODEX_CALLS="$CODEX_CALL_LOG" FAKE_CODEX_STDIN="$CODEX_STDIN_LOG" FAKE_CODEX_MODE=commit \
+  FAKE_CLAUDE_CALLS="$CALL_LOG" FAKE_CLAUDE_MODE=none FAKE_CLAUDE_REPO="$REPO_NATIVE" \
+  CODEX_BIN="$FAKE_CODEX" CLAUDE_BIN="$FAKE_CLAUDE" \
+  WF_BOARD="$TEST_BOARD" WF_REPO="$REPO_NATIVE" WF_PYTHON="$PY" WF_HERMES="$HERMES_BIN" \
+  bash scripts/dispatch-lane.sh "$B11" cx-frontend "B11 前端任务：调整页面标记与样式" "$REPO_NATIVE" "$TEST_BOARD" > "$B11_LOG" 2>&1
+RC=$?
+B11_SHOW=$(card_show "$B11")
+if [[ "$RC" -eq 0 ]]; then ok "B11 退出码 0"; else bad "B11 退出码期望 0，实际 $RC；输出：$(cat "$B11_LOG")"; fi
+if [[ -s "$CODEX_CALL_LOG" ]]; then ok "B11 假 codex 被调用"; else bad "B11 假 codex 未被调用（cx- 卡没进 codex 车道）：$(cat "$B11_LOG")"; fi
+if grep -q -- "exec" "$CODEX_CALL_LOG" 2>/dev/null; then ok "B11 调用含 codex exec 子命令"; else bad "B11 调用缺 exec：$(cat "$CODEX_CALL_LOG" 2>/dev/null)"; fi
+if grep -q -- "-s workspace-write" "$CODEX_CALL_LOG" 2>/dev/null; then ok "B11 沙箱参数 -s workspace-write"; else bad "B11 沙箱参数缺失：$(cat "$CODEX_CALL_LOG" 2>/dev/null)"; fi
+if grep -Eq -- " -$" "$CODEX_CALL_LOG" 2>/dev/null; then ok "B11 以 '-' 结尾（指令从 stdin 读）"; else bad "B11 缺 stdin 位置参数：$(cat "$CODEX_CALL_LOG" 2>/dev/null)"; fi
+if grep -q -- "--agent" "$CODEX_CALL_LOG" 2>/dev/null; then bad "B11 codex 不应收到 --agent：$(cat "$CODEX_CALL_LOG")"; else ok "B11 codex 未收到 --agent"; fi
+if [[ -s "$CODEX_STDIN_LOG" ]] && grep -q "## 车道" "$CODEX_STDIN_LOG" && grep -q "codex" "$CODEX_STDIN_LOG" && grep -q "B11 前端任务" "$CODEX_STDIN_LOG"; then
+  ok "B11 TASK.md 经 stdin 传入且含车道段"
+else
+  bad "B11 stdin 内容异常：$(head -20 "$CODEX_STDIN_LOG" 2>/dev/null)"
+fi
+if [[ ! -s "$CALL_LOG" ]]; then ok "B11 claude 未被误调（车道隔离）"; else bad "B11 claude 被调用了：$(cat "$CALL_LOG")"; fi
+if echo "$B11_SHOW" | grep -q "^  status:[[:space:]]*done"; then ok "B11 卡 done（复用三态产出校验）"; else bad "B11 卡状态异常：$(echo "$B11_SHOW" | head -3)"; fi
 fi
 
 echo ""

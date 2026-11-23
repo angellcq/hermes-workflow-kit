@@ -81,13 +81,13 @@
 | 需求分析 | `AN` | Hermes | `hm-analysis` | 澄清记录 + 追踪矩阵 + PRD |
 | 概要设计 | `HLD` | Hermes | `hm-design` | HLD（组件/接口/选型理由+备选） |
 | 详细设计 | `DD` | Hermes | `hm-design` | DD（含行号锚点、口径、红线、files_scope） |
-| 代码开发 | `DEV` | Claude Code | `cc-<角色>` | 分支 commit + 自验构建 + DoD 勾选 |
+| 代码开发 | `DEV` | Claude Code（前端域 Codex） | `cc-<角色>` / `cx-<角色>` | 分支 commit + 自验构建 + DoD 勾选 |
 | 验收测试 | `QA` | Hermes（+ 换模型复核） | `hm-verify` | 交付验证报告（模板 07）+ 看板证据 |
 | 交付收尾 | `CLS` | Hermes | `hm-delivery` | 文档归档 + 追踪矩阵闭环 + 复盘 |
 
 任务 ID 命名：`T-<模块>-<阶段码>-<序号>`（如 `T-YFKX-DD-1`、`T-YFKX-DEV-2`）。旧 `T-NNN` 卡不回溯改名，新卡一律用此规范。
 
-**派单路由键与负责人（v5.0）**：`assignee` 是**派单路由键，不是人名字段**——`cc-<角色>` = 派给对应 Claude Code 子 agent；`hm-<用途>` = Hermes 主会话自己做。卡面「负责人」**由 assignee 前缀派生渲染**（`cc-*`→Claude Code、`hm-*`→Hermes），不手填，保持单一事实源。
+**派单路由键与负责人（v5.0）**：`assignee` 是**派单路由键，不是人名字段**——`cc-<角色>` = 派给对应 Claude Code 子 agent；`cx-<角色>` = 派给 Codex 车道（前端域，见 §6.8）；`hm-<用途>` = Hermes 主会话自己做。卡面「负责人」**由 assignee 前缀派生渲染**（`cc-*`→Claude Code、`cx-*`→Codex、`hm-*`→Hermes），不手填，保持单一事实源。
 **铁律：assignee 禁止填真实 Hermes profile 名（`default` 等）**——命中 profile 会被网关内置 dispatcher 认领并启动 Hermes worker，等于把编码活派回协调者自己。
 
 **依赖必须落板**：依赖关系一律用 `hermes kanban link <子卡> <父卡>` 建边，父卡未 done 时子卡由看板自动压回 `todo`、父卡全 done 后自动升 `ready`。只在任务卡文字里写"依赖"等于没有依赖（下游会被提前派发）。`unlink` 慎用：解除瞬间子卡即满足依赖变 `ready`，此时若有派发器在跑会被立即派出去，是双派双写事故的经典触发路径。
@@ -248,6 +248,25 @@ python .hermes/scripts/pipeline.py \
 7. **走工作流时 Hermes 不亲自改代码**：正常流程只负责拆解需求→写任务卡→派发 Claude Code/Codex 改代码→独立验收（review diff + 构建）；代码修改只能由派发的编码代理完成（委派失败按第 6 条兜底，转手动前告知用户）
 8. **派发时不管用户用什么模型**：不查、不提醒、不干预 cc-switch 模型配置，直接派发
 
+### 6.8 双车道：cc-（Claude Code）/ cx-（Codex）
+
+**机制**：`assignee` 前缀就是执行车道——`cc-<角色>` → claude 车道，`cx-<角色>` → codex 车道。两条车道共用同一套守卫与收尾（`scripts/dispatch-lane.sh`：守卫①~⑥、TASK.md、三态产出校验、`claim`/`block`/`complete` 回写），差别只有执行器与角色机制。**不用新增看板字段**：哨兵本就靠 assignee 前缀过滤，前缀是唯一的防抢单机制。
+
+| 维度 | `cc-` 车道（Claude Code） | `cx-` 车道（Codex） |
+|---|---|---|
+| 文件域 | 后端服务、WinForm `*Form.cs` 业务逻辑、SQL、脚本 | 前端域：HTML/CSS/JS、Vue 前端脚本、WinForm `*.Designer.cs` 布局、`*.resx` |
+| 角色加载 | `--agent cc-<角色>` 真加载（`~/.claude/agents/`） | 无 subagent 机制：角色名以「## 角色」文本进 TASK.md，边界靠 `files_scope` |
+| 执行命令 | `claude -p … --agent … --output-format json` | `codex exec -s workspace-write -C <原生路径> - < TASK.md` |
+| 模型 | 用户在 cc-switch 里定 | 用户在 `~/.codex/config.toml` 里定；派单器**绝不传 `-m`** |
+
+**WinForm 分层（一卡只动一类文件，`files_scope` 必须声明）**：
+
+- `cx-*` 布局卡：`*.Designer.cs`（控件树 / Anchor / Dock / 尺寸 / 字体颜色 / Tab 顺序）、`*.resx`、纯视觉调整；允许跑构建、允许启动 Form 截图作验收证据。
+- `cc-*` 逻辑卡：`*Form.cs` 的事件 / 校验 / 取数 / 业务、Service / Repository、SQL。
+- 控件改名或改类型属于跨域改动：**一张卡由 `cc-` 同时改两边**，或布局卡先、逻辑卡后（`kanban_link` 串行）；禁止两条车道并行改同一文件。
+
+**禁止**：把 `cx-*` 装成 Hermes profile（网关 dispatcher 会抢单，见 §8.1）；`cx-` 车道改业务代码或控件名（发现即 block）；任务卡省略 `files_scope`。
+
 ---
 
 ## 七、跨语言开发工作流（融合版新增）
@@ -295,11 +314,15 @@ python .hermes/scripts/pipeline.py \
 
 ---
 
-## 八、通用角色库（11 角色在用，5 个已废弃）
+## 八、通用角色库（10 角色在用，6 个已废弃）
 
 > **唯一清单**见 `通用角色库说明.md §二`。本节只约定调用方式。
-> 在用 11 个：A 级 8（backend-developer / frontend-developer / fullstack-developer / mobile-developer / dba / devops / test-engineer / build-error-resolver）+ B 级 3（code-reviewer / security-reviewer / architect）。C 级 5 个（`project-manager` / `loop-operator` / `planner` / `tdd-guide` / `docs-writer`）已移到 `通用角色库/deprecated/`，`install-claude-agents.sh` 不装它们。
-> **为什么废弃这 5 个**：`project-manager` 会指示 CC 自己建卡派卡（抢主会话职责）、`loop-operator` 与 cron/watchdog 重叠、`planner` 会替主会话拍设计决策、`tdd-guide` 与本套件的验收门重复、`docs-writer` 与模板库重复 —— 留着只会让 CC 越权改流程。
+> 在用 10 个：A 级 7（backend-developer / fullstack-developer / mobile-developer / dba / devops / test-engineer / build-error-resolver）+ B 级 3（code-reviewer / security-reviewer / architect）。C 级 6 个（`project-manager` / `loop-operator` / `planner` / `tdd-guide` / `docs-writer` / `frontend-developer`）已移到 `通用角色库/deprecated/`，`install-claude-agents.sh` 不装它们。
+> **为什么废弃这 6 个**：`project-manager` 会指示 CC 自己建卡派卡（抢主会话职责）、`loop-operator` 与 cron/watchdog 重叠、`planner` 会替主会话拍设计决策、`tdd-guide` 与本套件的验收门重复、`docs-writer` 与模板库重复、`frontend-developer` 的前端域（HTML/CSS/JS、Vue 脚本、WinForm 布局）已整体移交 `cx-` Codex 车道（§6.8），留着只会与 Codex 双写同一批文件 —— 越权改流程与双写都属于必须消除的歧义。
+
+### 8.0 双车道访问（cc- / cx-）
+
+角色库只服务 **claude 车道**（`cc-*`）。前端域（HTML/CSS/JS、Vue 前端脚本、WinForm `*.Designer.cs` 布局与 `*.resx`）由 **codex 车道**（`cx-*`）执行，规则见 §6.8；codex 没有 subagent 机制，不进本角色库。
 
 ### 8.1 调用方式
 
@@ -324,7 +347,8 @@ bash .hermes/scripts/agent-bridge.sh parallel --tasks tasks.yaml
 ### 8.2 跨语言加载约定
 
 每个角色启动时，**自动按目标语言加载对应规范子集**（详见 `编码规范_跨语言.md`）：
-- `backend-developer` / `frontend-developer` / `mobile-developer` → 加载对应语言 / 框架规范
+- `backend-developer` / `mobile-developer` → 加载对应语言 / 框架规范
+- 前端（HTML/CSS/JS、Vue 脚本）已移交 `cx-` Codex 车道（§6.8），claude 车道不再有前端角色
 - `dba` → 按数据库类型（MySQL / PG / DM / Oracle / Mongo）加载 SQL 规范
 
 ### 8.3 模型选择约定

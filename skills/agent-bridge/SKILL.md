@@ -43,7 +43,7 @@ bash .hermes/scripts/agent-bridge.sh monitor --task-id t-001
 bash agent-bridge.sh roles
 # 输出：
 #   backend-developer   通用后端开发（跨语言自适应）
-#   frontend-developer  通用前端开发（Vue/React/小程序自适应）
+#   frontend-developer  已废弃（前端域 HTML/CSS/JS、Vue 脚本、WinForm 布局移交 cx- Codex 车道）
 #   dba                 数据库设计与优化
 #   devops              CI/CD 与部署
 #   test-engineer       测试（单测/集成/E2E）
@@ -149,11 +149,11 @@ tasks:
     max_turns: 10
 
   - id: t-002
-    role: frontend-developer
-    task: "实现登录页面组件"
+    role: devops
+    task: "为 auth 模块加 CI 流水线"
     workdir: /path/to/project
     files_scope:
-      - src/components/Login.vue
+      - .github/workflows/
     max_turns: 10
 
   - id: t-003

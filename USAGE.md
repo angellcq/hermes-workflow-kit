@@ -90,7 +90,7 @@ python .hermes/scripts/pipeline.py \
 ```bash
 # 1) 装（幂等，先看动作再落盘）
 bash scripts/install-claude-agents.sh --dry-run
-bash scripts/install-claude-agents.sh          # 装 11 个 cc-* 到 ~/.claude/agents/
+bash scripts/install-claude-agents.sh          # 装 10 个 cc-* 到 ~/.claude/agents/（数量=通用角色库顶层角色数）
 cp config/wf.env.example config/wf.env         # 2) 配：板名 / 仓库路径 / 并发 / 冷却熔断
 # 3) 挂 tick（每 5 分钟扫一次板；schedule 是位置参数，--script 只认 $HERMES_HOME/scripts/ 下的文件名）
 hermes cron create "every 5m" --no-agent --name sentinel-<板> --script sentinel-<板>.sh --deliver local

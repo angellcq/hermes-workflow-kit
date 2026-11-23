@@ -5,7 +5,7 @@
 #   W1 state 文件不存在            → 输出含 SENTINEL_DEAD no-state
 #   W2 state 文件 mtime 1 小时前    → 输出含 SENTINEL_DEAD age=
 #   W3 state 文件刚写              → 不出现 SENTINEL_DEAD
-#   W4 ready 卡 assignee 为空 → 含 ASSIGNEE_DRIFT <tid> empty；cc-x 卡 → 不出现
+#   W4 ready 卡 assignee 为空 → 含 ASSIGNEE_DRIFT <tid> empty；cc-x / cx-x 卡 → 不出现
 #
 # ⚠ 路径形态陷阱（实测踩过）：传给原生程序（python）的路径必须 C:/... 形式，
 # 测试里组装路径先过 cygpath -m。watchdog 通过 WF_STATE_FILE 环境变量接受
@@ -90,8 +90,11 @@ hermes kanban boards create "$TEST_BOARD" >/dev/null 2>&1 || true
 # 卡 A：assignee 为空（缺省建卡）
 TID_A=$(hermes kanban --board "$TEST_BOARD" create "W4 漂移卡（无 assignee）" 2>/dev/null \
   | awk '/^Created /{print $2}')
-# 卡 B：assignee = cc-x（哨兵前缀，应放行）
+# 卡 B：assignee = cc-x（claude 车道前缀，应放行）
 TID_B=$(hermes kanban --board "$TEST_BOARD" create "W4 正常卡（cc-x）" --assignee cc-x 2>/dev/null \
+  | awk '/^Created /{print $2}')
+# 卡 C：assignee = cx-x（codex 车道前缀，同样应放行——多前缀 P11）
+TID_C=$(hermes kanban --board "$TEST_BOARD" create "W4 正常卡（cx-x）" --assignee cx-x 2>/dev/null \
   | awk '/^Created /{print $2}')
 OUT=$(run_wd)
 if [[ -n "$TID_A" ]] && echo "$OUT" | grep -q "ASSIGNEE_DRIFT $TID_A empty"; then
@@ -103,6 +106,11 @@ if [[ -n "$TID_B" ]] && ! echo "$OUT" | grep -q "ASSIGNEE_DRIFT $TID_B"; then
   ok "W4b cc-x 卡不报 ASSIGNEE_DRIFT"
 else
   bad "W4b cc-x 卡不应报 ASSIGNEE_DRIFT；输出：$OUT"
+fi
+if [[ -n "$TID_C" ]] && ! echo "$OUT" | grep -q "ASSIGNEE_DRIFT $TID_C"; then
+  ok "W4c cx-x 卡不报 ASSIGNEE_DRIFT（多前缀生效）"
+else
+  bad "W4c cx-x 卡不应报 ASSIGNEE_DRIFT；输出：$OUT"
 fi
 
 echo ""

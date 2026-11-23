@@ -4,6 +4,35 @@
 
 ---
 
+## v5.0-P11（2026-11-23）— 双车道：`cc-`（Claude Code）/ `cx-`（Codex），前端域整体移交 Codex
+
+**背景**：前端域（HTML/CSS/JS、Vue 前端脚本、WinForm 界面布局）此前没有独占执行体，`cc-frontend-developer`
+与 `cc-backend-developer`/`cc-fullstack-developer` 三头重叠；同时 Codex 侧「名义有、实际不通」——
+`scripts/agent-bridge.sh:293` 调 `codex --quiet`（codex-cli 0.171.0 已无该参数）且 role 只进日志不生效。
+按「一个执行体一个域」收口：新增 Codex 车道，前端域整体迁走，cc 车道只留业务域。
+
+- **车道 = assignee 前缀**（不新增字段）：`cc-*` → Claude Code，`cx-*` → Codex；哨兵本就靠前缀过滤，
+  前缀是防网关抢单的唯一手段。`scripts/card-sentinel.py` `DEFAULT_AGENT_PREFIX = "cc-,cx-"`，
+  `WF_AGENT_PREFIX` 支持逗号多前缀（`startswith(tuple)`，空值回退默认，防 `startswith(())` 恒 False 静默全 SKIP）
+- `scripts/dispatch-lane.sh`：`main()` 按 assignee 前缀定车道（用内置前缀判定，不依赖 `wf.env`）；
+  守卫①~⑥、快照三态校验、claim/block/complete 回写两车道共用。codex 分支执行
+  `codex exec -s "$WF_CODEX_SANDBOX" -C "$(py_native_path "$project_dir")" - < TASK.md`
+  （stdin 喂卡避开 4KB 内联；**不传 `-m`/`-c model=`**，模型由用户 `~/.codex/config.toml` 决定；
+  `codex exec` 非交互、无审批弹窗，故沙箱即权限边界，默认 `workspace-write`）；缺 `CODEX_BIN` 时 block 卡
+- `config/wf.env.example`：`WF_AGENT_PREFIX=cc-,cx-`、`CODEX_BIN=`、`WF_CODEX_SANDBOX=workspace-write`
+- 角色库：`frontend-developer` 由 `通用角色库/` 顶层移入 `通用角色库/deprecated/frontend-developer.md`
+  （在用 11 → **10**，废弃 5 → 6）；
+  `通用角色库说明.md`、`Hermes_制度层.md` §二/§八 同步；新增 **§6.8 双车道**（文件域对照、WinForm 分层
+  三条：`cx-*` 只管 `*.Designer.cs` 控件树/Anchor/Dock/尺寸/字体颜色/Tab 顺序 + `*.resx` + 纯视觉，
+  `cc-*` 管 `*Form.cs` 事件/校验/取数/业务与 Service/SQL，控件改名改类型属跨域须同卡或串行）
+- **数量不再写死**：`scripts/verify-deploy.sh` V3/V5、`scripts/bootstrap-machine.sh` 的 agents 计数
+  改为以 `通用角色库/` 顶层角色数为真值（角色库升降级时不必再改校验）
+- 测试：`tests/test_dispatch_guards.sh` 新增 **B11**（假 codex 替身：断言被调、参数含
+  `exec -s workspace-write` 且以 ` -` 结尾、不含 `--agent`、stdin 收到 TASK.md、claude 调用日志为空、卡 done）；
+  `tests/test_sentinel.sh` 新增 **S2b**（`cx-` 卡进 `WOULD_DISPATCH`，验多前缀过滤）
+
+---
+
 ## v5.0-P10（2026-10-23）— 技能双向漂移回并 + `--prune` 静默零删除修复
 
 **背景**：6 个已部署项目 `.hermes/` 与仓库 HEAD 逐文件一致，但全局技能副本（`$HERMES_HOME/skills/`，

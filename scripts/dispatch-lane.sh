@@ -4,6 +4,14 @@
 # 用法:
 #   bash dispatch-lane.sh <task_id> <agent_or_role> "<prompt>" [project_dir] [board]
 #
+# 双车道（assignee 前缀即车道，v5.0-P11）:
+#   cc-<角色>  → claude 车道（后端业务代码 / WinForm 业务逻辑 / SQL），可 --agent 真加载角色
+#   cx-<角色>  → codex 车道（前端域：HTML/CSS/JS、Vue 脚本、WinForm *.Designer.cs 布局）
+#   两条车道共用守卫①~⑥、TASK.md、三态产出校验（git 快照对比）与 claim/block/complete 回写；
+#   差别只有执行器与角色机制（codex 无 --agent，角色只以文本进 TASK.md）。
+#   为什么用前缀而不是新增看板字段：哨兵靠 assignee 前缀过滤，前缀是唯一的防抢单机制
+#   （真 profile 名会被网关 dispatcher 认领），加字段还要改 list --json 解析与既有卡。
+#
 # 环境变量（缺省取 wf.env 同名键）:
 #   FORCE_DISPATCH=1      跳过守卫②③
 #   SKIP_PRODUCE_CHECK=1  收尾直接 complete（透传给 card_check.py）
@@ -30,13 +38,21 @@ WF_ENV_FILE="${WF_ENV_FILE:-$SCRIPT_DIR/../config/wf.env}"
 [[ -f "$WF_ENV_FILE" ]] && . "$WF_ENV_FILE"
 
 WF_BOARD="${WF_BOARD:-}"
-WF_AGENT_PREFIX="${WF_AGENT_PREFIX:-cc-}"
+# 车道前缀（逗号分隔）。cc- → claude 车道，cx- → codex 车道。
+# 哨兵只派带这些前缀的卡，本脚本按前缀分派执行器——前缀即车道。
+WF_AGENT_PREFIX="${WF_AGENT_PREFIX:-cc-,cx-}"
 WF_CLAUDE_ARGS="${WF_CLAUDE_ARGS:---allowedTools Bash,Read,Write,Edit,MultiEdit,Grep,Glob}"
 WF_MAX_OUTPUT_TOKENS="${WF_MAX_OUTPUT_TOKENS:-32000}"
 WF_PYTHON="${WF_PYTHON:-}"
 WF_HERMES="${WF_HERMES:-hermes}"
 # claude 可执行可注入（tests/test_dispatch_guards.sh 用假执行器替身）
 CLAUDE_BIN="${CLAUDE_BIN:-claude}"
+# codex 车道（cx-*）执行器。沙箱使用 workspace-write：允许改文件并跑构建
+# （前端卡常需 npm/dotnet build），但不放开到 danger-full-access——守卫⑥靠 git
+# 快照判定产出，越界改盘外文件无从复核。codex exec 在非 tty 下不弹审批，
+# 该沙箱就是实际权限边界。CODEX_BIN 可注入（测试用替身，实测 tester 见 tests/）。
+CODEX_BIN="${CODEX_BIN:-codex}"
+WF_CODEX_SANDBOX="${WF_CODEX_SANDBOX:-workspace-write}"
 # P6：角色真加载与权限模式。ENABLE=0 强制关闭 --agent；agents 目录可覆盖
 # （该路径只被 bash [[ -f ]] 判断用，不传给原生程序，MSYS 形式即可）；
 # 权限模式缺省 acceptEdits，值 off 不传（历史实测缺它时 worker 在权限墙上等/被拒，
@@ -54,7 +70,8 @@ usage() {
 用法: bash dispatch-lane.sh <task_id> <agent_or_role> "<prompt>" [project_dir] [board]
 
   <task_id>       看板卡号（hermes kanban 卡 id，如 t_xxxx）
-  <agent_or_role> 工人角色名（自动补 WF_AGENT_PREFIX 前缀）
+  <agent_or_role> 工人角色名：cc-* 走 claude 车道，cx-* 走 codex 车道；
+                  不带前缀（如 backend-developer）自动补默认前缀（cc-）
   "<prompt>"      派单提示词（写入 TASK.md）
   [project_dir]   目标 git 仓库绝对路径（缺省取 WF_REPO）
   [board]         看板板名（缺省取 WF_BOARD；两处都空 → 参数错误 exit 2）
@@ -148,13 +165,23 @@ main() {
   local CARD_CHECK_PY
   CARD_CHECK_PY="$(py_native_path "$SCRIPT_DIR/card_check.py")"
 
-  # ---- 工人名规范化：不带前缀自动补 WF_AGENT_PREFIX ----
+  # ---- 工人名规范化 + 车道判定（前缀即车道）----
   # 兼容传 backend-developer（D1 裁决：assignee=路由键，前缀是防抢单机制——
   # 真 profile 名会被网关 dispatcher 抢单）。
-  local agent_name="$agent_in"
-  if [[ -n "$WF_AGENT_PREFIX" && "$agent_name" != "$WF_AGENT_PREFIX"* ]]; then
-    agent_name="${WF_AGENT_PREFIX}${agent_name}"
-  fi
+  # 车道判定用内置前缀，不依赖 wf.env 的 WF_AGENT_PREFIX：cx- 恒为 codex 车道，
+  # 其余（cc- 或自定义前缀）走 claude 车道；裸角色名补默认前缀（历史行为）。
+  local agent_name="$agent_in" lane="" default_prefix="${WF_AGENT_PREFIX%%,*}"
+  case "$agent_name" in
+    cx-*) lane="codex" ;;
+    cc-*) lane="claude" ;;
+    *)
+      lane="claude"
+      case "$default_prefix" in
+        ""|cx-) default_prefix="cc-" ;;
+      esac
+      agent_name="${default_prefix}${agent_name}"
+      ;;
+  esac
 
   # ═══ 守卫①：全程显式 --board ═══
   # kanban/current 是全局指针，会随别的项目漂移；不带 --board 的 claim 曾
@@ -211,6 +238,13 @@ main() {
   fi
 
   # ---- 写 TASK.md（防空任务：worker 的启动指令只有"读 TASK.md 并执行"）----
+  # 车道行是 codex 车道唯一能携带的系统约束（codex 无 --agent 机制），必须写进卡。
+  local lane_hint
+  if [[ "$lane" == "codex" ]]; then
+    lane_hint="前端域（HTML/CSS/JS、Vue 前端脚本、WinForm *.Designer.cs 布局与 *.resx）。业务逻辑/服务端代码不在此车道：发现需要改业务代码或控件名，停下来在卡上说明并 block。"
+  else
+    lane_hint="业务代码域（后端服务、WinForm *Form.cs 业务逻辑、SQL）。不要改 *.Designer.cs、*.resx 与页面标记/样式（那是 cx- 前端车道）。"
+  fi
   local tmpdir task_md
   tmpdir="$(mktemp -d)"
   task_md="$tmpdir/TASK.md"
@@ -221,6 +255,9 @@ $prompt
 
 ## 角色
 $agent_name
+
+## 车道
+$lane —— $lane_hint
 
 ## 工作目录
 $project_dir
@@ -239,7 +276,9 @@ EOF
   # claude 对不存在的 --agent 会直接报错退出（比"没加载角色"更糟），所以
   # 文件存在性是硬前置。判定顺序固定：关闭 → assignee 为空 → 存在 → 跳过。
   local agent_flag=()
-  if [[ "$WF_CLAUDE_AGENT_ENABLE" == "0" ]]; then
+  if [[ "$lane" != "claude" ]]; then
+    log "角色加载：跳过（$lane 车道无 --agent 机制，角色以「## 角色」文本写进 TASK.md）"
+  elif [[ "$WF_CLAUDE_AGENT_ENABLE" == "0" ]]; then
     log "角色加载：关闭（WF_CLAUDE_AGENT_ENABLE=0）"
   elif [[ -z "$agent_name" ]]; then
     log "角色加载：跳过（卡上没有 assignee）"
@@ -256,17 +295,37 @@ EOF
     perm_flag=(--permission-mode "$WF_CLAUDE_PERMISSION_MODE")
   fi
 
-  log "派单 [task=$task_id agent=$agent_name board=$BOARD workdir=$project_dir]"
-  "$CLAUDE_BIN" -p "读 $task_md 并执行。完成后输出修改文件清单与 diff 摘要。" \
-    $WF_CLAUDE_ARGS \
-    "${agent_flag[@]}" "${perm_flag[@]}" \
-    --output-format json
-  local worker_rc=$?
+  local worker_rc=0
+  if [[ "$lane" == "codex" ]]; then
+    # ── codex 车道（前端域）──
+    # 用 stdin 喂 TASK.md（`-` 表示从 stdin 读指令）：卡正文常超过内联命令行
+    # 安全长度，且引号/换行在参数里会失真。模型不传（用用户自己的 codex 配置）。
+    # -C 必须原生形态：codex 是原生 Rust 程序，不认 git-bash 的 /f/... 路径。
+    if ! command -v "$CODEX_BIN" >/dev/null 2>&1; then
+      err "找不到 codex（CODEX_BIN=$CODEX_BIN）：cx- 车道不可用，拒绝派单"
+      rm -rf "$tmpdir"
+      "$WF_HERMES" kanban --board "$BOARD" block "$task_id" \
+        "cx 车道缺少 codex 可执行（CODEX_BIN=$CODEX_BIN）" >/dev/null 2>&1 || true
+      return 2
+    fi
+    local codex_dir
+    codex_dir="$(py_native_path "$project_dir")"
+    log "派单 [task=$task_id lane=codex agent=$agent_name board=$BOARD workdir=$project_dir sandbox=$WF_CODEX_SANDBOX]"
+    "$CODEX_BIN" exec -s "$WF_CODEX_SANDBOX" -C "$codex_dir" - < "$task_md"
+    worker_rc=$?
+  else
+    log "派单 [task=$task_id lane=claude agent=$agent_name board=$BOARD workdir=$project_dir]"
+    "$CLAUDE_BIN" -p "读 $task_md 并执行。完成后输出修改文件清单与 diff 摘要。" \
+      $WF_CLAUDE_ARGS \
+      "${agent_flag[@]}" "${perm_flag[@]}" \
+      --output-format json
+    worker_rc=$?
+  fi
 
   rm -rf "$tmpdir"
 
   # ═══ 守卫⑥：三态产出校验收尾 ═══
-  # claude 底层退出码 ≠ 0：worker 没跑完，不存在"校验产出"，直接 block 并透传。
+  # worker（claude / codex）底层退出码 ≠ 0：没跑完，不存在"校验产出"，直接 block 并透传。
   # 挡"worker 崩了但脚本当成成功收尾"。
   if [[ "$worker_rc" -ne 0 ]]; then
     "$WF_HERMES" kanban --board "$BOARD" block "$task_id" \

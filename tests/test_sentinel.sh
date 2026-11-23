@@ -149,6 +149,17 @@ else
 fi
 if echo "$OUT" | grep -q "^SKIP $S2 assignee-not-lane"; then ok "S2 记 SKIP assignee-not-lane"; else bad "S2 缺 assignee-not-lane：$OUT"; fi
 
+# ── S2b：cx- 卡也进派单范围（WF_AGENT_PREFIX 多前缀，v5.0-P11）──
+# 只验过滤判定（dry-run），真派走 codex 车道的路径由 test_dispatch_guards B11 覆盖。
+echo "── S2b cx- 卡进派单范围（多前缀）──"
+S2B=$(new_card "S2b cx 前端卡" "cx-lane")
+OUT=$(run_sentinel --dry-run --max-concurrent 5)
+if echo "$OUT" | grep -q "^WOULD_DISPATCH $S2B "; then
+  ok "S2b cx- 卡出现在 WOULD_DISPATCH（前缀 cc-,cx- 都生效）"
+else
+  bad "S2b cx- 卡未被纳入派单（前缀未生效）：$OUT"
+fi
+
 # ── S3：cc- 卡会派（假执行器被调用，calls 里有 tid）──
 echo "── S3 cc- 卡真派 ──"
 S3=$(new_card "S3 真派卡" "cc-lane")

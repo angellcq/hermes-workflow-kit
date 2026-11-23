@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """card-sentinel.py — 看板哨兵判定器（T-KIT-P3A 任务卡 §2.1，纯标准库）
 
-定时扫板，把符合条件、assignee 属于 cc- 前缀的 ready 卡交给派单器
-（scripts/dispatch-lane.sh，T-KIT-P2 交付）。判定流程顺序不可换：
+定时扫板，把符合条件、assignee 属于车道前缀（cc- = claude 车道 / cx- = codex 车道）
+的 ready 卡交给派单器（scripts/dispatch-lane.sh，T-KIT-P2 交付）。判定流程顺序不可换：
 
     1. hermes kanban list --json 取卡（find_hermes() 已处理 MSYS/.exe 归一）
     2. 只要 status == "ready"；claimed（= running）打印 SKIP claimed 后跳过
-    3. 只碰 assignee 以 WF_AGENT_PREFIX（默认 cc-）开头的卡，其余一律不动
+    3. 只碰 assignee 以 WF_AGENT_PREFIX（默认 cc-,cx-，逗号可配）开头的卡，其余一律不动
     4. 冷却：cooldown[tid] 未到期 → SKIP cooldown
     5. 熔断：fails[tid] >= WF_FAIL_FUSE → block(needs_input) + SKIP fused
     6. 并发：全局 running >= WF_MAX_CONCURRENT → SKIP global-limit；
@@ -17,9 +17,10 @@
 
 - 为什么必须落盘（state 用 os.replace 原子写）：cron 每轮都是新进程，
   内存计数必清零——不落盘就会无限重派同一张失败卡。
-- 为什么只碰 cc- 前缀：网关内置 dispatcher 只会 spawn Hermes profile
+- 为什么只碰 cc-/cx- 前缀：网关内置 dispatcher 只会 spawn Hermes profile
   （profile_exists 硬闸门），真 profile 名（hm-*）的卡它自己会派，哨兵再碰
-  就是双写；cc-* 路由键网关永远派不出去，只有哨兵会派。
+  就是双写；cc-*/cx-* 路由键网关永远派不出去，只有哨兵会派。两个前缀对应两条
+  执行车道（前缀即车道，见 Hermes制度层 §6.8）。
 
 CLI：
     python scripts/card-sentinel.py [--board B] [--dry-run] [--state PATH]
@@ -47,7 +48,7 @@ from wf_common import env, find_hermes, load_config
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(SCRIPT_DIR)
 
-DEFAULT_AGENT_PREFIX = "cc-"
+DEFAULT_AGENT_PREFIX = "cc-,cx-"
 DEFAULT_FAIL_FUSE = 3
 DEFAULT_MAX_CONCURRENT = 2
 DEFAULT_MAX_PER_AGENT = 1
@@ -203,7 +204,7 @@ def _int_env(name: str, default: int, cfg: dict) -> int:
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(
-        description="看板哨兵：扫板把 cc- 前缀 ready 卡交给派单器（T-KIT-P3A）")
+        description="看板哨兵：扫板把 cc-/cx- 前缀 ready 卡交给派单器（T-KIT-P3A）")
     ap.add_argument("--board", default=None, help="板名（缺省取 WF_BOARD）")
     ap.add_argument("--dry-run", action="store_true",
                     help="只打印计划，不写 state、不调派单器、不动卡")
@@ -229,7 +230,13 @@ def main(argv: list[str]) -> int:
     max_per_agent = args.max_per_agent
     if max_per_agent is None:
         max_per_agent = _int_env("WF_MAX_PER_AGENT", DEFAULT_MAX_PER_AGENT, cfg)
-    prefix = env("WF_AGENT_PREFIX", DEFAULT_AGENT_PREFIX, cfg=cfg)
+    # 车道前缀（逗号分隔）：cc- → claude 车道，cx- → codex 车道。
+    # 空/全空项兜底用 DEFAULT_AGENT_PREFIX，避免 startswith(()) 恒 False 把
+    # 所有卡静默判成 assignee-not-lane。
+    prefix_raw = env("WF_AGENT_PREFIX", DEFAULT_AGENT_PREFIX, cfg=cfg) or ""
+    prefixes = tuple(p.strip() for p in prefix_raw.split(",") if p.strip())
+    if not prefixes:
+        prefixes = tuple(p.strip() for p in DEFAULT_AGENT_PREFIX.split(",") if p.strip())
     fuse = _int_env("WF_FAIL_FUSE", DEFAULT_FAIL_FUSE, cfg)
     cooldown_s = _int_env("WF_COOLDOWN_SECONDS", DEFAULT_COOLDOWN_SECONDS, cfg)
 
@@ -272,11 +279,12 @@ def main(argv: list[str]) -> int:
             skipped += 1
             continue
 
-        # ── 判定 3：只碰 cc- 前缀 ──
+        # ── 判定 3：只碰车道前缀（cc- / cx-，逗号可配）──
         # 空 assignee / hm-* / 真 profile 名一律不碰——真 profile 名的卡网关
-        # dispatcher 自己会派，哨兵再派就是双写。
+        # dispatcher 自己会派，哨兵再派就是双写。前缀同时决定执行车道
+        # （cx- 派给 codex），所以这里是路由判定，不只是过滤。
         assignee = str(card.get("assignee") or "").strip()
-        if not assignee.startswith(prefix):
+        if not assignee.startswith(prefixes):
             print(f"SKIP {tid} assignee-not-lane")
             skipped += 1
             continue

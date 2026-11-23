@@ -10,10 +10,11 @@
 
 | assignee 前缀 | 归属（卡面「负责人」栏渲染） | 谁执行 |
 |---|---|---|
-| `cc-<角色>`（如 `cc-backend-developer`） | Claude Code（角色名） | 对应编码 agent |
+| `cc-<角色>`（如 `cc-backend-developer`） | Claude Code（角色名） | 业务域编码 agent（后端/库/业务逻辑/SQL） |
+| `cx-<角色>`（如 `cx-frontend`） | Codex（角色名） | 前端域执行体（HTML/CSS/JS、Vue 脚本、WinForm `*.Designer.cs`） |
 | `hm-<用途>`（如 `hm-analysis`） | Hermes | 主会话自己做（分析/设计/验收/收尾） |
 
-前缀取 `cc-`（对齐编码 CLI 生态与既有 lane 约定）；换前缀要**全链路同时改**（建卡命令、派发器白名单、巡检信号、模板示例），
+前缀即车道（`cc-` → Claude Code，`cx-` → Codex）；换前缀要**全链路同时改**（建卡命令、派发器白名单、巡检信号、模板示例），
 否则卡会静默变成 `skipped_nonspawnable` 谁也派不动。
 
 单一事实源：卡面负责人手填 = 迟早与 assignee 打架。

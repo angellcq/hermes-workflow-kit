@@ -155,14 +155,17 @@ else
   p_warn "claude $CLAUDE_VER < 2.1.300：--agent 不可用 —— 修法：升级 Claude Code"
 fi
 
-# CC agents 目录：统计 cc-*.md，期望 11（目录不存在 ≡ 0 个；WARN 不阻止 --apply——install 脚本会建目录装齐）
+# CC agents 目录：统计 cc-*.md，期望 = 通用角色库顶层角色数（目录不存在 ≡ 0 个；
+# WARN 不阻止 --apply——install 脚本会建目录装齐）。数量不写死：角色库升降级时不用改这里。
 AGENTS_DIR="${CC_AGENTS_DIR:-$HOME/.claude/agents}"
 AGENTS_SHOW="$(to_native "$AGENTS_DIR")"
+_WANT_AGENTS="$(ls -1 "$ROOT"/通用角色库/*.md 2>/dev/null | wc -l | tr -d ' ')"
+[[ "$_WANT_AGENTS" -gt 0 ]] || _WANT_AGENTS=10
 _n="$(find "$AGENTS_DIR" -maxdepth 1 -name 'cc-*.md' -type f 2>/dev/null | wc -l)"
-if [[ "$_n" -eq 11 ]]; then
-  p_ok "CC agents：$AGENTS_SHOW 下 cc-*.md 共 $_n 个（期望 11）"
+if [[ "$_n" -eq "$_WANT_AGENTS" ]]; then
+  p_ok "CC agents：$AGENTS_SHOW 下 cc-*.md 共 $_n 个（期望 $_WANT_AGENTS）"
 else
-  p_warn "CC agents：$AGENTS_SHOW 下 cc-*.md 共 $_n 个（期望 11）—— 修法：bash scripts/install-claude-agents.sh（--apply 自动装）"
+  p_warn "CC agents：$AGENTS_SHOW 下 cc-*.md 共 $_n 个（期望 $_WANT_AGENTS）—— 修法：bash scripts/install-claude-agents.sh（--apply 自动装）"
 fi
 
 # ── 探测：全局件（watchdog 副本 / 全局技能 / 全局心跳）──────────
